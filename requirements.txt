@@ -1,5 +1,5 @@
 streamlit
 gspread
-gspread-formatting
+google-auth
 beautifulsoup4
 selenium

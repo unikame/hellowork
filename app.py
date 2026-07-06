@@ -3,10 +3,11 @@ import time
 import re
 import os
 import shutil
+import json
 import base64 as _b64
 import urllib.parse
 import gspread
-from gspread_formatting import get_effective_format
+from google.oauth2.service_account import Credentials
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -567,11 +568,18 @@ if st.button("取得を開始", type="primary"):
     with st.spinner("処理を実行中です... しばらくお待ちください。"):
         try:
             log_area.text("スプレッドシートに接続中...")
-            if not os.path.exists('credentials.json'):
-                st.error("GitHub上に credentials.json が見つかりません。")
+            # Streamlit CloudのSecretsから認証情報を取得
+            try:
+                creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
+            except Exception:
+                st.error("Streamlit CloudのSecretsに GOOGLE_CREDENTIALS が設定されていません。Settings → Secrets で設定してください。")
                 st.stop()
-
-            gc = gspread.service_account(filename='credentials.json')
+            scopes = [
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive",
+            ]
+            creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+            gc = gspread.authorize(creds)
             main_ss = gc.open_by_key(MAIN_SHEET_KEY)
             sheet = main_ss.get_worksheet_by_id(MAIN_SHEET_GID)
             records = sheet.get_all_values()
