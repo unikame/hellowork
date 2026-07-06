@@ -1,0 +1,5 @@
+streamlit
+gspread
+gspread-formatting
+beautifulsoup4
+selenium
