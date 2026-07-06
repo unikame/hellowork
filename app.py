@@ -6,6 +6,18 @@ import shutil
 import json
 import base64 as _b64
 import urllib.parse
+import subprocess
+
+# ＝＝＝ D-Busが無いコンテナ環境でChromiumを起動するための設定（最優先） ＝＝＝
+os.environ['DBUS_SESSION_BUS_ADDRESS'] = 'disabled:'
+os.environ['DBUS_SYSTEM_BUS_ADDRESS'] = 'disabled:'
+# D-Busソケットディレクトリを作成（存在しないとChromiumがクラッシュする）
+try:
+    os.makedirs('/run/dbus', exist_ok=True)
+    subprocess.run(['dbus-daemon', '--system', '--fork'], capture_output=True, timeout=5)
+except Exception:
+    pass
+
 import gspread
 from google.oauth2.service_account import Credentials
 from selenium import webdriver
@@ -25,10 +37,6 @@ st.set_page_config(page_title="ASUMO ハローワーク求人取得", page_icon=
 
 
 def setup_browser():
-    # D-Busが無いコンテナ環境でChromiumを起動するため、D-Busを無効化
-    os.environ['DBUS_SESSION_BUS_ADDRESS'] = 'disabled:'
-    os.environ['DBUS_SYSTEM_BUS_ADDRESS'] = 'disabled:'
-    
     options = Options()
     options.add_argument('--headless')
     options.add_argument('--no-sandbox')
