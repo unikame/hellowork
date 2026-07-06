@@ -595,6 +595,31 @@ if st.button("取得を開始", type="primary"):
             records = sheet.get_all_values()
             log_area.text(f"シートの読み込み完了！ 全部で {len(records)} 行あります。")
 
+            # ＝＝＝ Chrome環境の診断 ＝＝＝
+            import subprocess
+            diag = []
+            for cmd_name in ["chromium", "chromium-browser", "google-chrome"]:
+                path = shutil.which(cmd_name)
+                if path:
+                    try:
+                        ver = subprocess.check_output([path, "--version"], stderr=subprocess.STDOUT, timeout=5).decode().strip()
+                        diag.append(f"{cmd_name}: {path} → {ver}")
+                    except Exception as e:
+                        diag.append(f"{cmd_name}: {path} → バージョン取得失敗: {e}")
+                else:
+                    diag.append(f"{cmd_name}: 未検出")
+            for cmd_name in ["chromedriver", "chromium-driver"]:
+                path = shutil.which(cmd_name)
+                if path:
+                    try:
+                        ver = subprocess.check_output([path, "--version"], stderr=subprocess.STDOUT, timeout=5).decode().strip()
+                        diag.append(f"{cmd_name}: {path} → {ver}")
+                    except Exception as e:
+                        diag.append(f"{cmd_name}: {path} → バージョン取得失敗: {e}")
+                else:
+                    diag.append(f"{cmd_name}: 未検出")
+            log_area.info("Chrome環境診断:\n" + "\n".join(diag))
+
             driver = setup_browser()
 
             # データは5行目（index4）から。ヘッダーは3行目。
