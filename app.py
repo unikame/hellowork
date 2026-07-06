@@ -9,14 +9,24 @@ import urllib.parse
 import subprocess
 
 # ＝＝＝ D-Busが無いコンテナ環境でChromiumを起動するための設定（最優先） ＝＝＝
-os.environ['DBUS_SESSION_BUS_ADDRESS'] = '/dev/null'
-os.environ['DBUS_SYSTEM_BUS_ADDRESS'] = '/dev/null'
-# D-Busソケットディレクトリを作成（存在しないとChromiumがクラッシュする）
 try:
     os.makedirs('/run/dbus', exist_ok=True)
-    subprocess.run(['dbus-daemon', '--system', '--fork'], capture_output=True, timeout=5)
+    # システムバスを起動
+    subprocess.run(
+        ['dbus-daemon', '--system', '--fork', '--nopidfile'],
+        capture_output=True, timeout=5
+    )
+    # セッションバスも起動してアドレスを取得
+    result = subprocess.run(
+        ['dbus-daemon', '--session', '--fork', '--print-address'],
+        capture_output=True, text=True, timeout=5
+    )
+    if result.stdout.strip():
+        os.environ['DBUS_SESSION_BUS_ADDRESS'] = result.stdout.strip()
 except Exception:
-    pass
+    # dbus-daemonが起動できない場合は正しい形式の無効アドレスを設定
+    os.environ['DBUS_SESSION_BUS_ADDRESS'] = 'unix:path=/dev/null'
+    os.environ['DBUS_SYSTEM_BUS_ADDRESS'] = 'unix:path=/dev/null'
 
 import gspread
 from google.oauth2.service_account import Credentials
