@@ -30,6 +30,13 @@ def setup_browser():
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-gpu')
+    options.add_argument('--single-process')
+    options.add_argument('--no-zygote')
+    options.add_argument('--disable-extensions')
+    options.add_argument('--disable-software-rasterizer')
+    options.add_argument('--disable-setuid-sandbox')
+    options.add_argument('--remote-debugging-port=9222')
+    options.add_argument('--window-size=1920,1080')
     options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
     options.add_argument('--disable-blink-features=AutomationControlled')
     chrome_path = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
@@ -571,8 +578,11 @@ if st.button("取得を開始", type="primary"):
             # Streamlit CloudのSecretsから認証情報を取得
             try:
                 creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
-            except Exception:
-                st.error("Streamlit CloudのSecretsに GOOGLE_CREDENTIALS が設定されていません。Settings → Secrets で設定してください。")
+                # private_keyの文字列リテラル \n を実際の改行に変換
+                if "private_key" in creds_dict:
+                    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+            except Exception as e:
+                st.error(f"Secretsの読み込みに失敗しました: {e}")
                 st.stop()
             scopes = [
                 "https://www.googleapis.com/auth/spreadsheets",
