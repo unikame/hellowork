@@ -9,8 +9,8 @@ import urllib.parse
 import subprocess
 
 # ＝＝＝ D-Busが無いコンテナ環境でChromiumを起動するための設定（最優先） ＝＝＝
-os.environ['DBUS_SESSION_BUS_ADDRESS'] = 'disabled:'
-os.environ['DBUS_SYSTEM_BUS_ADDRESS'] = 'disabled:'
+os.environ['DBUS_SESSION_BUS_ADDRESS'] = '/dev/null'
+os.environ['DBUS_SYSTEM_BUS_ADDRESS'] = '/dev/null'
 # D-Busソケットディレクトリを作成（存在しないとChromiumがクラッシュする）
 try:
     os.makedirs('/run/dbus', exist_ok=True)
@@ -38,18 +38,12 @@ st.set_page_config(page_title="ASUMO ハローワーク求人取得", page_icon=
 
 def setup_browser():
     options = Options()
-    options.add_argument('--headless')
+    options.add_argument('--headless=new')
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-gpu')
-    options.add_argument('--single-process')
-    options.add_argument('--no-zygote')
     options.add_argument('--disable-extensions')
     options.add_argument('--disable-software-rasterizer')
-    options.add_argument('--disable-setuid-sandbox')
-    options.add_argument('--disable-crash-reporter')
-    options.add_argument('--crash-dumps-dir=/tmp')
-    options.add_argument('--disable-features=dbus')
     options.add_argument('--window-size=1920,1080')
     options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
     options.add_argument('--disable-blink-features=AutomationControlled')
