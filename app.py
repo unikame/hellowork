@@ -664,9 +664,10 @@ if st.button("取得を開始", type="primary"):
                         continue
 
                     kinmu_jikan = gcol(3)  # D列 勤務時間
+                    area_block = gcol(4)  # E列 都道府県エリア（地方ブロック：関東など）
                     pref = gcol(5)     # F列 都道府県
                     mid_cat = gcol(6)  # G列 市区町村エリア
-                    cities = [gcol(7), gcol(8), gcol(9), gcol(10), gcol(11)]  # H?L列
+                    cities = [gcol(7), gcol(8), gcol(9), gcol(10), gcol(11)]  # H〜L列
                     dai_shokusyu = gcol(12)  # M列 職種大項目
                     sho_list = [gcol(13), gcol(14), gcol(15)]  # N/O/P列
                     target_url = gcol(16)  # Q列 転記先URL
@@ -686,7 +687,7 @@ if st.button("取得を開始", type="primary"):
                     try:
                         hw_input_kyushoku_no(page, log_area)
                         hw_select_kubun(page, kubun, kinmu_jikan, log_area)
-                        hw_select_area(page, pref, mid_cat, cities, log_area)
+                        hw_select_area(page, area_block, pref, mid_cat, cities, log_area)
                         hw_select_shokusyu(page, dai_shokusyu, sho_list, log_area)
                         time.sleep(1.0)
 
