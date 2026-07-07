@@ -298,6 +298,23 @@ def hw_select_area(page, area_block, pref, mid_cat, cities, log_area):
         else:
             log_area.warning("   就業場所の決定ボタンが見つかりませんでした。")
         time.sleep(1.0)
+
+        # ＝＝＝ 診断：本当にフォームへ反映されたか確認 ＝＝＝
+        try:
+            hidden_val = page.evaluate("document.querySelector('#ID_todohukenHidden')?.value || ''")
+            label_val = page.evaluate("document.querySelector('#ID_todohukenNameLbl')?.textContent || ''")
+            modal_still_open = page.evaluate(
+                "Array.from(document.querySelectorAll('div.modal')).some(m => {"
+                "const s = window.getComputedStyle(m); return s.display !== 'none' && s.visibility !== 'hidden';"
+                "})"
+            )
+            log_area.info(
+                f"   【反映確認】隠しフィールド値: {hidden_val or '（空）'} / "
+                f"選択中ラベル表示: {label_val.strip() or '（空）'} / "
+                f"モーダルまだ開いている: {modal_still_open}"
+            )
+        except Exception as e:
+            log_area.warning(f"   反映確認の診断に失敗: {e}")
     except Exception as e:
         log_area.warning(f"   就業場所の決定ボタン押下に失敗: {e}")
         return False
