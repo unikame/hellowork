@@ -659,27 +659,24 @@ if st.button("取得を開始", type="primary"):
                         hw_select_area(page, pref, mid_cat, cities, log_area)
                         hw_select_shokusyu(page, dai_shokusyu, sho_list, log_area)
                         time.sleep(1.0)
-                        # 求職番号を使うため「番号検索」ボタン（ID_searchNoBtn）を押す。
-                        # 同一idが複数（PC/モバイル）あるので、表示されているものをクリック。
+
+                        # 【診断】検索ボタンを押す直前のスクリーンショット
                         try:
-                            btns = page.locator("#ID_searchNoBtn")
-                            clicked = False
-                            for bi in range(btns.count()):
-                                b = btns.nth(bi)
-                                if b.is_visible():
-                                    b.scroll_into_view_if_needed(timeout=5000)
-                                    b.click(timeout=10000)
-                                    clicked = True
-                                    break
-                            if not clicked:
-                                # 表示判定に関わらずJSで発火
-                                page.evaluate("document.querySelector('#ID_searchNoBtn').click()")
+                            shot_before = page.screenshot(full_page=True)
+                            st.image(shot_before, caption="検索ボタンを押す直前の画面", use_container_width=True)
+                        except Exception as e:
+                            log_area.warning(f"   直前スクショ失敗: {e}")
+
+                        # 「検索する」ボタン（ID_searchBtn）をクリック
+                        try:
+                            page.locator("#ID_searchBtn").first.scroll_into_view_if_needed(timeout=5000)
+                            page.locator("#ID_searchBtn").first.click(timeout=10000)
                         except Exception:
                             try:
-                                page.evaluate("document.querySelector('#ID_searchNoBtn').click()")
+                                page.evaluate("document.querySelector('#ID_searchBtn').click()")
                             except Exception:
-                                page.evaluate("document.querySelector('#ID_searchNoBtn').closest('form').submit()")
-                        log_area.text("   番号検索を実行しました。結果ページへの遷移を待っています...")
+                                page.evaluate("document.querySelector('#ID_searchBtn').closest('form').submit()")
+                        log_area.text("   検索を実行しました。結果ページへの遷移を待っています...")
 
                         # 検索結果（○件中 1〜）が現れるまで待つ（最大40秒）
                         transitioned = False
@@ -693,6 +690,13 @@ if st.button("取得を開始", type="primary"):
                                 transitioned = True
                                 break
                         time.sleep(1.5)
+
+                        # 【診断】検索ボタンを押した後のスクリーンショット
+                        try:
+                            shot_after = page.screenshot(full_page=True)
+                            st.image(shot_after, caption="検索ボタンを押した後の画面", use_container_width=True)
+                        except Exception as e:
+                            log_area.warning(f"   直後スクショ失敗: {e}")
 
                         # ＝＝＝ 遷移後の診断 ＝＝＝
                         cur_url = page.url
