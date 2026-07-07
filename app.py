@@ -157,20 +157,12 @@ def hw_select_area(page, area_block, pref, mid_cat, cities, log_area):
         return False
     time.sleep(0.5)
 
-    # 「都道府県から選択」という見出しを含むモーダルコンテナを特定し、その中だけを操作範囲にする
-    try:
-        modal_scope = page.locator("div.modal", has_text="都道府県から選択").first
-        if modal_scope.count() == 0 or not modal_scope.is_visible():
-            modal_scope = page  # フォールバック：ページ全体
-    except Exception:
-        modal_scope = page
-
     def click_visible_text_in_scope(label):
-        """操作範囲（都道府県モーダル）内で、画面に見えているテキストを持つ要素をクリック"""
+        """ページ全体から、画面に見えているテキストを持つ要素をクリック"""
         if not label:
             return False
         try:
-            locator = modal_scope.get_by_text(label, exact=False)
+            locator = page.get_by_text(label, exact=False)
             n = locator.count()
             for i in range(n):
                 el = locator.nth(i)
