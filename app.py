@@ -659,8 +659,15 @@ if st.button("取得を開始", type="primary"):
                         hw_select_area(page, pref, mid_cat, cities, log_area)
                         hw_select_shokusyu(page, dai_shokusyu, sho_list, log_area)
                         time.sleep(1.0)
-                        # 検索ボタンをクリック
-                        page.locator("#ID_searchBtn").click(force=True, timeout=10000)
+                        # 検索ボタンをクリック（通常クリック→ダメならJSで発火）
+                        try:
+                            page.locator("#ID_searchBtn").scroll_into_view_if_needed(timeout=5000)
+                            page.locator("#ID_searchBtn").click(timeout=10000)
+                        except Exception:
+                            try:
+                                page.evaluate("document.querySelector('#ID_searchBtn').click()")
+                            except Exception:
+                                page.evaluate("document.querySelector('#ID_searchBtn').closest('form').submit()")
                         log_area.text("   検索を実行しました。結果ページへの遷移を待っています...")
 
                         # 検索結果ページ（GECA110020）に遷移するまで待つ（最大30秒）
