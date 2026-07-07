@@ -499,56 +499,53 @@ def hw_extract_detail(soup, dai_shokusyu):
         phone = m.group(0) if m else NA
 
     # ＝＝＝ 就業場所セクションから「最寄り駅・交通手段・所要時間」を抽出 ＝＝＝
+    # 最寄り駅情報はtd内のサブラベル（bタグ太字）として記載されている
     moyori_info = ""
-    shugyo_cell = None
-    for th in soup.find_all(['th', 'dt']):
-        t = th.get_text(strip=True)
-        if t == "就業場所":
-            shugyo_cell = th.find_next_sibling(['td', 'dd'])
-            if shugyo_cell is None:
-                shugyo_cell = th.find_next(['td', 'dd'])
-            break
-    if shugyo_cell is None:
-        for tr in soup.find_all('tr'):
-            tds = tr.find_all('td')
-            if len(tds) >= 2 and tds[0].get_text(strip=True) == "就業場所":
-                shugyo_cell = tds[1]
-                break
-
-    if shugyo_cell:
-        cell_text = shugyo_cell.get_text(separator="\n", strip=True)
-        lines = [l.strip() for l in cell_text.split("\n") if l.strip()]
-        current_label = ""
-        moyori_parts = {"最寄り駅": "", "交通手段": "", "所要時間": ""}
-        for line in lines:
-            is_label = False
-            if "最寄り駅から" in line and "交通手段" in line:
-                current_label = "交通手段"
-                is_label = True
-            elif "最寄り駅" in line and len(line) < 10:
-                current_label = "最寄り駅"
-                is_label = True
-            elif "所要時間" in line and len(line) < 10:
-                current_label = "所要時間"
-                is_label = True
-            elif "受動喫煙" in line or "地図表示" in line:
-                current_label = ""
-                is_label = True
-            if not is_label and current_label:
-                if moyori_parts.get(current_label):
-                    moyori_parts[current_label] += " " + line
-                else:
-                    moyori_parts[current_label] = line
-
-        parts_list = []
-        if moyori_parts["最寄り駅"]:
-            parts_list.append(moyori_parts["最寄り駅"])
-        if moyori_parts["交通手段"]:
-            parts_list.append(moyori_parts["交通手段"])
-        if moyori_parts["所要時間"]:
-            parts_list.append(moyori_parts["所要時間"])
-        moyori_info = " ".join(parts_list) if parts_list else NA
-    else:
+    try:
+        moyori_parts = []
+        # ページ全体からbタグで「最寄り駅」を探す
+        for b_tag in soup.find_all(['b', 'strong']):
+            b_text = b_tag.get_text(strip=True)
+            if "最寄り駅" in b_text and "交通手段" not in b_text:
+                # 「最寄り駅」の次のテキスト（路線名＋駅名）を取得
+                next_text = ""
+                for sib in b_tag.next_siblings:
+                    t = sib.get_text(strip=True) if hasattr(sib, 'get_text') else str(sib).strip()
+                    if t and t not in ["", "\n"]:
+                        next_text = t
+                        break
+                if next_text:
+                    moyori_parts.append(next_text)
+            elif "交通手段" in b_text and "所要時間" in b_text:
+                # 「最寄り駅から就業場所までの交通手段　所要時間」の次のテキストを取得
+                next_text = ""
+                for sib in b_tag.next_siblings:
+                    t = sib.get_text(strip=True) if hasattr(sib, 'get_text') else str(sib).strip()
+                    if t and t not in ["", "\n"]:
+                        next_text = t
+                        break
+                if next_text:
+                    moyori_parts.append(next_text)
+            elif "交通手段" in b_text:
+                next_text = ""
+                for sib in b_tag.next_siblings:
+                    t = sib.get_text(strip=True) if hasattr(sib, 'get_text') else str(sib).strip()
+                    if t and t not in ["", "\n"]:
+                        next_text = t
+                        break
+                if next_text:
+                    moyori_parts.append(next_text)
+            elif b_text == "所要時間":
+                next_text = ""
+                for sib in b_tag.next_siblings:
+                    t = sib.get_text(strip=True) if hasattr(sib, 'get_text') else str(sib).strip()
+                    if t and t not in ["", "\n"]:
+                        next_text = t
+                        break
+                if next_text:
+                    moyori_parts.append(next_text)
+        moyori_info = " ".join(moyori_parts) if moyori_parts else NA
+    except Exception:
         moyori_info = NA
 
     # ＝＝＝ 担当者セクションから個別項目を抽出 ＝＝＝
