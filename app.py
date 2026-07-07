@@ -233,18 +233,48 @@ def hw_select_area(page, pref, mid_cat, cities, log_area):
         else:
             log_area.text(f"   市区町村「{city}」を選択しました。")
 
-    # 決定ボタン
+    # 決定ボタン（都道府県モーダルは動的生成。表示中モーダル内の「決定」をJSで確実に押す）
     try:
-        time.sleep(0.3)
-        decide = page.locator(
-            "//div[contains(@class,'modal')]//input[@value='決定' and not(@onclick[contains(.,'EasyShokusyu')]) and not(@onclick[contains(.,'Jyouken')])]"
+        time.sleep(0.5)
+        clicked = page.evaluate(
+            """() => {
+                // 表示されているモーダルを探す
+                const modals = Array.from(document.querySelectorAll('div.modal, div[class*="modal"]'));
+                for (const modal of modals) {
+                    // 画面に表示されているモーダルのみ対象
+                    const style = window.getComputedStyle(modal);
+                    if (style.display === 'none' || style.visibility === 'hidden') continue;
+                    // 職種・条件モーダルは除外（都道府県モーダルの決定だけ押す）
+                    const cls = modal.className || '';
+                    if (cls.includes('EasyShokusyu') || cls.includes('Jyouken')) continue;
+                    // モーダル内の「決定」ボタンを探す
+                    const btns = Array.from(modal.querySelectorAll('input, button, a'));
+                    for (const b of btns) {
+                        const label = (b.value || b.textContent || '').trim();
+                        if (label === '決定') {
+                            b.click();
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }"""
         )
-        if decide.count() > 0:
+        if not clicked:
+            # フォールバック：従来のlocator方式
+            decide = page.locator(
+                "//div[contains(@class,'modal')]//input[@value='決定' and not(@onclick[contains(.,'EasyShokusyu')]) and not(@onclick[contains(.,'Jyouken')])]"
+            )
             for i in range(decide.count()):
                 b = decide.nth(i)
                 if b.is_visible():
                     b.click(force=True, timeout=5000)
+                    clicked = True
                     break
+        if clicked:
+            log_area.text("   就業場所の「決定」を押しました。")
+        else:
+            log_area.warning("   就業場所の決定ボタンが見つかりませんでした。")
         time.sleep(1.0)
     except Exception as e:
         log_area.warning(f"   就業場所の決定ボタン押下に失敗: {e}")
