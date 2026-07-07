@@ -94,6 +94,36 @@ st.set_page_config(page_title="ASUMO ハローワーク求人取得", page_icon=
                    layout="wide", initial_sidebar_state="expanded")
 
 
+def diagnose_chromium():
+    """Chromiumを最小構成で直接起動し、生のstderrを取得する（クラッシュ原因の特定用）"""
+    chrome_bin = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
+    if not chrome_bin:
+        return "Chromium本体が見つかりません"
+    tests = [
+        ("最小構成", ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage',
+                    '--disable-gpu', '--dump-dom', 'about:blank']),
+        ("単一プロセス", ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage',
+                     '--disable-gpu', '--single-process', '--no-zygote',
+                     '--dump-dom', 'about:blank']),
+    ]
+    results = []
+    for name, args in tests:
+        try:
+            r = subprocess.run([chrome_bin] + args, capture_output=True, text=True, timeout=20)
+            if r.returncode == 0:
+                results.append(f"【{name}】成功（起動OK）")
+            else:
+                # stderrの最後の方に本当の原因が出ることが多い
+                err = r.stderr.strip()
+                tail = err[-600:] if len(err) > 600 else err
+                results.append(f"【{name}】失敗 code={r.returncode}\n{tail}")
+        except subprocess.TimeoutExpired:
+            results.append(f"【{name}】タイムアウト（20秒）")
+        except Exception as e:
+            results.append(f"【{name}】例外: {e}")
+    return "\n\n".join(results)
+
+
 def setup_browser():
     # Chromiumのユーザーデータ・キャッシュを広い /tmp に置く（/dev/shm が64MBしかないため）
     _profile = '/tmp/chrome-profile'
@@ -680,6 +710,11 @@ if st.button("取得を開始", type="primary"):
             sheet = main_ss.get_worksheet_by_id(MAIN_SHEET_GID)
             records = sheet.get_all_values()
             log_area.text(f"シートの読み込み完了！ 全部で {len(records)} 行あります。")
+
+            # ＝＝＝ Chromiumのクラッシュ原因を特定（生ログ取得）＝＝＝
+            log_area.text("Chromiumの起動診断を実行中...")
+            chromium_diag = diagnose_chromium()
+            log_area.info("Chromium起動診断:\n" + chromium_diag)
 
             driver = setup_browser()
 
