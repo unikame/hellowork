@@ -258,6 +258,31 @@ def hw_select_area(page, area_block, pref, mid_cat, cities, log_area):
     # 決定ボタン（都道府県モーダルは動的生成。表示中モーダル内の「決定」をJSで確実に押す）
     try:
         time.sleep(0.5)
+
+        # ＝＝＝ 診断：表示中モーダル内の全ボタン候補を列挙 ＝＝＝
+        try:
+            btn_list = page.evaluate(
+                """() => {
+                    const modals = Array.from(document.querySelectorAll('div.modal, div[class*="modal"]'));
+                    const result = [];
+                    for (const modal of modals) {
+                        const style = window.getComputedStyle(modal);
+                        if (style.display === 'none' || style.visibility === 'hidden') continue;
+                        const modalClass = (modal.className || '').slice(0, 60);
+                        const btns = Array.from(modal.querySelectorAll('input, button, a, div[onclick], span[onclick]'));
+                        for (const b of btns) {
+                            const label = (b.value || b.textContent || '').trim().slice(0, 20);
+                            if (!label) continue;
+                            result.push(`[modal:${modalClass}] <${b.tagName}> "${label}" class="${(b.className||'').slice(0,50)}"`);
+                        }
+                    }
+                    return result.slice(0, 30);
+                }"""
+            )
+            log_area.info("   【モーダル内ボタン候補】\n   " + "\n   ".join(btn_list) if btn_list else "   モーダル内にボタンが見つかりませんでした（表示中モーダル自体が無い可能性）。")
+        except Exception as e:
+            log_area.warning(f"   ボタン列挙診断に失敗: {e}")
+
         clicked = page.evaluate(
             """() => {
                 // 表示されているモーダルを探す
