@@ -536,7 +536,7 @@ def hw_extract_detail(soup, dai_shokusyu):
 
 
 HW_HEADER = [
-    "", "問い合わせ", "希望する職種（大項目）", "求人番号", "紹介期限日", "事業所名",
+    "希望する職種（大項目）", "求人番号", "紹介期限日", "事業所名",
     "所在地", "ホームページ", "事業内容", "会社の特長", "事業所住所", "職種", "仕事内容",
     "雇用形態", "就業場所", "最寄り駅から選考場所までの交通手段・所要時間", "マイカー通勤",
     "必要な免許・資格", "基本給", "賞与", "通勤手当", "就業時間", "終業時間に関する特記事項",
@@ -558,12 +558,14 @@ def write_to_target_sheet(gc, target_url, data, log_area):
         if not target_sheet:
             target_sheet = target_ss.sheet1
         log_area.text(f"   -> 転記先シート「{target_sheet.title}」に書き込みます...")
+        # データの先頭2列（A列・B列の空文字）を除去してC列から書き込む
+        trimmed_data = [row[2:] if len(row) > 2 else row for row in data]
         rows_to_append = []
         if not target_sheet.get_all_values():
             rows_to_append.append(HW_HEADER)
-        rows_to_append.extend(data)
+        rows_to_append.extend(trimmed_data)
         if rows_to_append:
-            target_sheet.append_rows(rows_to_append)
+            target_sheet.append_rows(rows_to_append, table_range='C1')
         log_area.success(f"   データをスプレッドシートに転記しました（{len(data)}件）")
     except Exception as e:
         log_area.error(f"   転記エラー: {e}")
