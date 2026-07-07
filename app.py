@@ -546,7 +546,7 @@ HW_HEADER = [
 
 
 def write_to_target_sheet(gc, target_url, data, log_area):
-    """Q列のURL先スプレッドシートへ書き込む。前回と同じ『RPA更新用』優先ロジック。"""
+    """Q列のURL先スプレッドシートへ書き込む。最終行の次からC列に書き込む。"""
     try:
         sheet_key = target_url.split('/d/')[1].split('/')[0]
         target_ss = gc.open_by_key(sheet_key)
@@ -560,13 +560,12 @@ def write_to_target_sheet(gc, target_url, data, log_area):
         log_area.text(f"   -> 転記先シート「{target_sheet.title}」に書き込みます...")
         # データの先頭2列（A列・B列の空文字）を除去してC列から書き込む
         trimmed_data = [row[2:] if len(row) > 2 else row for row in data]
-        rows_to_append = []
-        if not target_sheet.get_all_values():
-            rows_to_append.append(HW_HEADER)
-        rows_to_append.extend(trimmed_data)
-        if rows_to_append:
-            target_sheet.append_rows(rows_to_append, table_range='C1')
-        log_area.success(f"   データをスプレッドシートに転記しました（{len(data)}件）")
+        # 最終行を明示的に取得して、その次の行から書き込む
+        all_values = target_sheet.get_all_values()
+        next_row = len(all_values) + 1
+        cell_range = f'C{next_row}'
+        target_sheet.update(cell_range, trimmed_data, value_input_option='USER_ENTERED')
+        log_area.success(f"   データをスプレッドシートに転記しました（{len(data)}件、{next_row}行目から）")
     except Exception as e:
         log_area.error(f"   転記エラー: {e}")
 
