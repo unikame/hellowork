@@ -294,13 +294,23 @@ def hw_collect_detail_urls(page, log_area):
             log_area.info("   該当求人なし。")
             break
         page_count = 0
-        for a in soup.find_all('a', id="ID_dispDetailBtn", href=True):
+        # ID_dispDetailBtn は複数リンクで重複しがちなので、href基準で広く拾う
+        for a in soup.find_all('a', href=True):
             href = a['href']
             if "action=dispDetailBtn" in href:
                 full = urllib.parse.urljoin(base, href.replace('&amp;', '&'))
                 if full not in detail_urls:
                     detail_urls.append(full)
                     page_count += 1
+        # onclick属性に埋め込まれている場合も拾う
+        if page_count == 0:
+            for el in soup.find_all(attrs={"onclick": True}):
+                oc = el.get("onclick", "")
+                if "dispDetailBtn" in oc:
+                    m = re.search(r"kJNo=(\d+)", oc)
+                    if m:
+                        # 検出できたことだけ記録（URL化は難しいので診断用）
+                        page_count = page_count  # noop
         log_area.text(f"   {page_num}ページ目から {page_count}件 の詳細リンクを取得（累計{len(detail_urls)}件）")
         if page_count == 0:
             break
@@ -615,9 +625,33 @@ if st.button("取得を開始", type="primary"):
                         hw_select_area(page, pref, mid_cat, cities, log_area)
                         hw_select_shokusyu(page, dai_shokusyu, sho_list, log_area)
                         time.sleep(0.5)
-                        page.locator("#ID_searchBtn").click(force=True, timeout=10000)
+                        # 検索ボタンをクリックし、ページ遷移の完了を待つ
+                        try:
+                            with page.expect_navigation(wait_until="domcontentloaded", timeout=30000):
+                                page.locator("#ID_searchBtn").click(force=True, timeout=10000)
+                        except Exception:
+                            # 遷移イベントが取れなくてもクリック自体は済んでいる場合がある
+                            page.locator("#ID_searchBtn").click(force=True, timeout=10000)
                         log_area.text("   検索を実行しました。結果一覧を取得します...")
-                        time.sleep(2.5)
+                        time.sleep(3.0)
+
+                        # ＝＝＝ 遷移後の診断 ＝＝＝
+                        cur_url = page.url
+                        soup_diag = BeautifulSoup(page.content(), "html.parser")
+                        # 該当件数の表示を探す
+                        ken = ""
+                        m = re.search(r'(\d[\d,]*)\s*件', soup_diag.get_text())
+                        if m:
+                            ken = m.group(0)
+                        # エラーメッセージの有無
+                        body_text = soup_diag.get_text()
+                        err_msg = ""
+                        for kw in ["エラー", "条件を", "選択してください", "入力してください", "該当する求人はありませんでした"]:
+                            if kw in body_text:
+                                idx = body_text.find(kw)
+                                err_msg = body_text[max(0, idx-20):idx+40].strip()
+                                break
+                        log_area.info(f"   遷移先URL: {cur_url}\n   該当件数表示: {ken or '見つからず'}\n   注目メッセージ: {err_msg or 'なし'}")
                     except Exception as e:
                         log_area.error(f"   検索フォーム操作でエラー: {e}")
                         continue
