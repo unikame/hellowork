@@ -498,6 +498,101 @@ def hw_extract_detail(soup, dai_shokusyu):
         m = re.search(r'0\d{1,4}-\d{1,4}-\d{3,4}', soup.get_text())
         phone = m.group(0) if m else NA
 
+    # ＝＝＝ 担当者セクションから個別項目を抽出 ＝＝＝
+    # ハローワークの「担当者」セクションには、課係名・役職名、担当者名、電話番号、FAX、Eメールが
+    # まとめて記載されている。これらをサブラベルで分割して取得する。
+    tantou_text = ""     # 課係名・役職名 ＋ 担当者名
+    tantou_tel = ""      # 電話番号
+    tantou_email = ""    # Eメール
+
+    # 「担当者」というthを持つtrまたはセクションを探す
+    tantou_cell = None
+    for th in soup.find_all(['th', 'dt']):
+        t = th.get_text(strip=True)
+        if t == "担当者":
+            tantou_cell = th.find_next_sibling(['td', 'dd'])
+            if tantou_cell is None:
+                tantou_cell = th.find_next(['td', 'dd'])
+            break
+    if tantou_cell is None:
+        for tr in soup.find_all('tr'):
+            tds = tr.find_all('td')
+            if len(tds) >= 2 and tds[0].get_text(strip=True) == "担当者":
+                tantou_cell = tds[1]
+                break
+
+    if tantou_cell:
+        cell_text = tantou_cell.get_text(separator="\n", strip=True)
+        lines = [l.strip() for l in cell_text.split("\n") if l.strip()]
+
+        # サブラベルで分割：各行を走査してラベルと値を対応付ける
+        current_label = ""
+        parts = {"課係名": "", "担当者": "", "電話番号": "", "FAX": "", "Eメール": ""}
+        skip_labels = ["担当者（カタカナ）", "ＦＡＸ", "FAX"]
+        skipping = False
+        for line in lines:
+            # サブラベル行の判定
+            is_label = False
+            # スキップすべきラベル
+            for sl in skip_labels:
+                if sl in line and len(line) < 25:
+                    skipping = True
+                    is_label = True
+                    break
+            if is_label:
+                continue
+            # 通常のラベル
+            for key in parts:
+                if key in line and len(line) < 20:
+                    current_label = key
+                    is_label = True
+                    skipping = False
+                    break
+            if "課係名、役職名" in line or "課係名" in line:
+                current_label = "課係名"
+                is_label = True
+                skipping = False
+            if "Ｅメール" in line or "E-mail" in line or "Eメール" in line:
+                current_label = "Eメール"
+                is_label = True
+                skipping = False
+            if not is_label and current_label and not skipping:
+                # 値行
+                if parts.get(current_label):
+                    parts[current_label] += " " + line
+                else:
+                    parts[current_label] = line
+
+        # AC列：課係名・役職名 ＋ 担当者名（電話番号は含めない）
+        tantou_parts = []
+        if parts.get("課係名"):
+            tantou_parts.append(parts["課係名"])
+        if parts.get("担当者"):
+            tantou_parts.append(parts["担当者"])
+        tantou_text = " ".join(tantou_parts) if tantou_parts else NA
+
+        # AD列：電話番号
+        tantou_tel = parts.get("電話番号") or ""
+        if not tantou_tel:
+            # セル内から電話番号パターンを探す
+            m = re.search(r'0\d{1,4}-\d{1,4}-\d{3,4}', cell_text)
+            if m:
+                tantou_tel = m.group(0)
+        tantou_tel = tantou_tel if tantou_tel else NA
+
+        # AE列：Eメール
+        tantou_email = parts.get("Eメール") or parts.get("メール") or ""
+        if not tantou_email:
+            # セル内からメールアドレスパターンを探す
+            m = re.search(r'[\w.+-]+@[\w.-]+\.\w+', cell_text)
+            if m:
+                tantou_email = m.group(0)
+        tantou_email = tantou_email if tantou_email else NA
+    else:
+        tantou_text = pick("", ["採用担当", "担当者"])
+        tantou_tel = phone
+        tantou_email = NA
+
     row = [
         "",                                                    # A
         "",                                                    # B 問い合わせ
@@ -528,9 +623,9 @@ def hw_extract_detail(soup, dai_shokusyu):
         pick("", ["応募書類"]),                                 # AA 応募書類等
         pick("", ["郵送", "書類の送付先", "送付場所"]),          # AB 郵送の送付場所
         pick("", ["選考に関する特記事項"]),                     # AC 選考に関する特記事項
-        pick("", ["採用担当", "担当者"]),                       # AD 担当者
-        phone,                                                 # AE 電話番号
-        pick("", ["メール", "E-mail", "Ｅメール"]),             # AF メール
+        tantou_text,                                           # AD 担当者（課係名・役職名＋担当者名）
+        tantou_tel,                                            # AE 電話番号
+        tantou_email,                                          # AF メール
     ]
     return row
 
