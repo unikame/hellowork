@@ -222,6 +222,24 @@ def hw_select_area(page, area_block, pref, mid_cat, cities, log_area):
         else:
             log_area.text(f"   市区町村エリア「{mid_cat}」を開きました。")
 
+    # ＝＝＝ 診断：市区町村チェック開始前のモーダル一覧 ＝＝＝
+    try:
+        modal_names_before = page.evaluate(
+            """() => {
+                const modals = Array.from(document.querySelectorAll('div.modal, div[class*="modal"]'));
+                const result = [];
+                for (const m of modals) {
+                    const s = window.getComputedStyle(m);
+                    if (s.display === 'none' || s.visibility === 'hidden') continue;
+                    result.push((m.className||'').slice(0,60));
+                }
+                return result;
+            }"""
+        )
+        log_area.info(f"   【市区町村チェック前のモーダル】{modal_names_before}")
+    except Exception:
+        pass
+
     # Lv4 市区町村（最大5つ）
     for city in cities:
         if not city:
@@ -254,6 +272,24 @@ def hw_select_area(page, area_block, pref, mid_cat, cities, log_area):
             log_area.warning(f"   市区町村「{city}」が見つかりませんでした。")
         else:
             log_area.text(f"   市区町村「{city}」を選択しました。")
+
+        # ＝＝＝ 診断：この市区町村チェック直後のモーダル一覧 ＝＝＝
+        try:
+            modal_names_after = page.evaluate(
+                """() => {
+                    const modals = Array.from(document.querySelectorAll('div.modal, div[class*="modal"]'));
+                    const result = [];
+                    for (const m of modals) {
+                        const s = window.getComputedStyle(m);
+                        if (s.display === 'none' || s.visibility === 'hidden') continue;
+                        result.push((m.className||'').slice(0,60));
+                    }
+                    return result;
+                }"""
+            )
+            log_area.info(f"   【「{city}」チェック直後のモーダル】{modal_names_after}")
+        except Exception:
+            pass
 
     # 決定ボタン（都道府県モーダルは動的生成。表示中モーダル内の「決定」をJSで確実に押す）
     try:
