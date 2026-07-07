@@ -9,24 +9,34 @@ import urllib.parse
 import subprocess
 
 # ＝＝＝ D-Busが無いコンテナ環境でChromiumを起動するための設定（最優先） ＝＝＝
-try:
-    os.makedirs('/run/dbus', exist_ok=True)
-    # システムバスを起動
-    subprocess.run(
-        ['dbus-daemon', '--system', '--fork', '--nopidfile'],
-        capture_output=True, timeout=5
-    )
-    # セッションバスも起動してアドレスを取得
-    result = subprocess.run(
-        ['dbus-daemon', '--session', '--fork', '--print-address'],
-        capture_output=True, text=True, timeout=5
-    )
-    if result.stdout.strip():
-        os.environ['DBUS_SESSION_BUS_ADDRESS'] = result.stdout.strip()
-except Exception:
-    # dbus-daemonが起動できない場合は正しい形式の無効アドレスを設定
-    os.environ['DBUS_SESSION_BUS_ADDRESS'] = 'unix:path=/dev/null'
-    os.environ['DBUS_SYSTEM_BUS_ADDRESS'] = 'unix:path=/dev/null'
+def _start_dbus():
+    try:
+        os.makedirs('/run/dbus', exist_ok=True)
+    except Exception:
+        pass
+    # システムバスを起動（ソケットは /run/dbus/system_bus_socket に作られる）
+    try:
+        subprocess.Popen(
+            ['dbus-daemon', '--system', '--nofork', '--nopidfile'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+    except Exception:
+        pass
+    # セッションバスを起動してアドレスを取得
+    try:
+        result = subprocess.run(
+            ['dbus-launch'],
+            capture_output=True, text=True, timeout=5
+        )
+        for line in result.stdout.splitlines():
+            if '=' in line:
+                key, _, val = line.partition('=')
+                os.environ[key] = val
+    except Exception:
+        pass
+
+_start_dbus()
+time.sleep(1)
 
 import gspread
 from google.oauth2.service_account import Credentials
