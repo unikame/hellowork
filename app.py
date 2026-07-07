@@ -659,19 +659,29 @@ if st.button("取得を開始", type="primary"):
                         hw_select_area(page, pref, mid_cat, cities, log_area)
                         hw_select_shokusyu(page, dai_shokusyu, sho_list, log_area)
                         time.sleep(1.0)
-                        # 検索ボタンをクリック（通常クリック→ダメならJSで発火）
+                        # 求職番号を使うため「番号検索」ボタン（ID_searchNoBtn）を押す。
+                        # 同一idが複数（PC/モバイル）あるので、表示されているものをクリック。
                         try:
-                            page.locator("#ID_searchBtn").scroll_into_view_if_needed(timeout=5000)
-                            page.locator("#ID_searchBtn").click(timeout=10000)
+                            btns = page.locator("#ID_searchNoBtn")
+                            clicked = False
+                            for bi in range(btns.count()):
+                                b = btns.nth(bi)
+                                if b.is_visible():
+                                    b.scroll_into_view_if_needed(timeout=5000)
+                                    b.click(timeout=10000)
+                                    clicked = True
+                                    break
+                            if not clicked:
+                                # 表示判定に関わらずJSで発火
+                                page.evaluate("document.querySelector('#ID_searchNoBtn').click()")
                         except Exception:
                             try:
-                                page.evaluate("document.querySelector('#ID_searchBtn').click()")
+                                page.evaluate("document.querySelector('#ID_searchNoBtn').click()")
                             except Exception:
-                                page.evaluate("document.querySelector('#ID_searchBtn').closest('form').submit()")
-                        log_area.text("   検索を実行しました。結果ページへの遷移を待っています...")
+                                page.evaluate("document.querySelector('#ID_searchNoBtn').closest('form').submit()")
+                        log_area.text("   番号検索を実行しました。結果ページへの遷移を待っています...")
 
-                        # 検索結果の「○件中」表示が現れるまで待つ（最大40秒）
-                        # ※ハローワークはURLが変わらずPOSTで中身が変わるため、件数表示の出現で判定
+                        # 検索結果（○件中 1〜）が現れるまで待つ（最大40秒）
                         transitioned = False
                         for _ in range(40):
                             time.sleep(1.0)
@@ -679,7 +689,7 @@ if st.button("取得を開始", type="primary"):
                                 content = page.content()
                             except Exception:
                                 content = ""
-                            if "件中" in content or "該当する求人はありませんでした" in content:
+                            if re.search(r'\d[\d,]*\s*件中\s*\d', content) or "該当する求人はありませんでした" in content:
                                 transitioned = True
                                 break
                         time.sleep(1.5)
@@ -689,8 +699,6 @@ if st.button("取得を開始", type="primary"):
                         soup_diag = BeautifulSoup(page.content(), "html.parser")
                         ken = ""
                         m = re.search(r'(\d[\d,]*)\s*件中', soup_diag.get_text())
-                        if not m:
-                            m = re.search(r'(\d[\d,]*)\s*件', soup_diag.get_text())
                         if m:
                             ken = m.group(0)
                         body_text = soup_diag.get_text()
