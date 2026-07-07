@@ -102,6 +102,15 @@ def setup_browser():
     options.add_argument('--disable-gpu')
     options.add_argument('--disable-extensions')
     options.add_argument('--disable-software-rasterizer')
+    options.add_argument('--disable-setuid-sandbox')
+    options.add_argument('--disable-features=VizDisplayCompositor')
+    options.add_argument('--disable-crash-reporter')
+    options.add_argument('--disable-crashpad')
+    options.add_argument('--no-first-run')
+    options.add_argument('--no-default-browser-check')
+    options.add_argument('--disable-background-networking')
+    options.add_argument('--disable-renderer-backgrounding')
+    options.add_argument('--disable-backgrounding-occluded-windows')
     options.add_argument('--window-size=1920,1080')
     options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
     options.add_argument('--disable-blink-features=AutomationControlled')
@@ -693,7 +702,10 @@ if st.button("取得を開始", type="primary"):
             if chrome_bin:
                 try:
                     result = subprocess.run(
-                        [chrome_bin, '--headless', '--no-sandbox', '--disable-gpu', '--dump-dom', 'about:blank'],
+                        [chrome_bin, '--headless=new', '--no-sandbox', '--disable-gpu',
+                         '--disable-dev-shm-usage', '--disable-setuid-sandbox',
+                         '--disable-crashpad', '--disable-crash-reporter',
+                         '--dump-dom', 'about:blank'],
                         capture_output=True, text=True, timeout=15
                     )
                     if result.returncode != 0:
