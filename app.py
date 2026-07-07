@@ -10,33 +10,37 @@ import subprocess
 
 # ＝＝＝ D-Busが無いコンテナ環境でChromiumを起動するための設定（最優先） ＝＝＝
 _DBUS_DIAG = []
+# 書き込み権限のある /tmp 配下にD-Busソケットを作る
+_DBUS_DIR = '/tmp/dbus'
+_DBUS_SOCK = f'{_DBUS_DIR}/system_bus_socket'
+_DBUS_SYSTEM_ADDR = f'unix:path={_DBUS_SOCK}'
 
 def _start_dbus():
-    # dbus-daemon / dbus-launch コマンドの有無を確認
     _DBUS_DIAG.append(f"dbus-daemon: {shutil.which('dbus-daemon') or '未検出'}")
-    _DBUS_DIAG.append(f"dbus-launch: {shutil.which('dbus-launch') or '未検出'}")
     try:
-        os.makedirs('/run/dbus', exist_ok=True)
+        os.makedirs(_DBUS_DIR, exist_ok=True)
+        _DBUS_DIAG.append(f"mkdir {_DBUS_DIR}: OK")
     except Exception as e:
-        _DBUS_DIAG.append(f"mkdir /run/dbus 失敗: {e}")
-    # システムバスを起動
+        _DBUS_DIAG.append(f"mkdir {_DBUS_DIR} 失敗: {e}")
+    # システムバスを /tmp のソケットで起動
     try:
         p = subprocess.Popen(
-            ['dbus-daemon', '--system', '--nofork', '--nopidfile'],
+            ['dbus-daemon', '--nofork', '--nopidfile',
+             f'--address={_DBUS_SYSTEM_ADDR}'],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         time.sleep(1.5)
         if p.poll() is not None:
-            # すぐ終了した＝失敗
             err = p.stderr.read().decode()[:300] if p.stderr else ""
             _DBUS_DIAG.append(f"system bus 即終了(code={p.returncode}): {err}")
         else:
             _DBUS_DIAG.append("system bus 起動中")
     except Exception as e:
         _DBUS_DIAG.append(f"system bus 起動例外: {e}")
-    # ソケットができたか確認
-    if os.path.exists('/run/dbus/system_bus_socket'):
+    if os.path.exists(_DBUS_SOCK):
         _DBUS_DIAG.append("system_bus_socket: 作成OK")
+        # Chromiumにこのアドレスを教える
+        os.environ['DBUS_SYSTEM_BUS_ADDRESS'] = _DBUS_SYSTEM_ADDR
     else:
         _DBUS_DIAG.append("system_bus_socket: 作成されず")
     # セッションバス
