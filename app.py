@@ -95,6 +95,15 @@ st.set_page_config(page_title="ASUMO ハローワーク求人取得", page_icon=
 
 
 def setup_browser():
+    # Chromiumのユーザーデータ・キャッシュを広い /tmp に置く（/dev/shm が64MBしかないため）
+    _profile = '/tmp/chrome-profile'
+    _cache = '/tmp/chrome-cache'
+    try:
+        os.makedirs(_profile, exist_ok=True)
+        os.makedirs(_cache, exist_ok=True)
+    except Exception:
+        pass
+
     options = Options()
     options.add_argument('--headless=new')
     options.add_argument('--no-sandbox')
@@ -111,6 +120,8 @@ def setup_browser():
     options.add_argument('--disable-background-networking')
     options.add_argument('--disable-renderer-backgrounding')
     options.add_argument('--disable-backgrounding-occluded-windows')
+    options.add_argument(f'--user-data-dir={_profile}')
+    options.add_argument(f'--disk-cache-dir={_cache}')
     options.add_argument('--window-size=1920,1080')
     options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
     options.add_argument('--disable-blink-features=AutomationControlled')
@@ -670,59 +681,8 @@ if st.button("取得を開始", type="primary"):
             records = sheet.get_all_values()
             log_area.text(f"シートの読み込み完了！ 全部で {len(records)} 行あります。")
 
-            # ＝＝＝ Chrome環境の診断 ＝＝＝
-            import subprocess
-            diag = []
-            for cmd_name in ["chromium", "chromium-browser", "google-chrome"]:
-                path = shutil.which(cmd_name)
-                if path:
-                    try:
-                        ver = subprocess.check_output([path, "--version"], stderr=subprocess.STDOUT, timeout=5).decode().strip()
-                        diag.append(f"{cmd_name}: {path} → {ver}")
-                    except Exception as e:
-                        diag.append(f"{cmd_name}: {path} → バージョン取得失敗: {e}")
-                else:
-                    diag.append(f"{cmd_name}: 未検出")
-            for cmd_name in ["chromedriver", "chromium-driver"]:
-                path = shutil.which(cmd_name)
-                if path:
-                    try:
-                        ver = subprocess.check_output([path, "--version"], stderr=subprocess.STDOUT, timeout=5).decode().strip()
-                        diag.append(f"{cmd_name}: {path} → {ver}")
-                    except Exception as e:
-                        diag.append(f"{cmd_name}: {path} → バージョン取得失敗: {e}")
-                else:
-                    diag.append(f"{cmd_name}: 未検出")
-            log_area.info("Chrome環境診断:\n" + "\n".join(diag))
-            log_area.info("D-Bus診断:\n" + "\n".join(_DBUS_DIAG))
-
-            # Chromiumを直接起動して診断
-            import subprocess
-            chrome_bin = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
-            if chrome_bin:
-                try:
-                    result = subprocess.run(
-                        [chrome_bin, '--headless=new', '--no-sandbox', '--disable-gpu',
-                         '--disable-dev-shm-usage', '--disable-setuid-sandbox',
-                         '--disable-crashpad', '--disable-crash-reporter',
-                         '--dump-dom', 'about:blank'],
-                        capture_output=True, text=True, timeout=15
-                    )
-                    if result.returncode != 0:
-                        log_area.warning(f"Chromium直接起動テスト失敗（code={result.returncode}）:\nstderr: {result.stderr[:500]}")
-                    else:
-                        log_area.text("Chromium直接起動テスト: OK")
-                except Exception as e:
-                    log_area.warning(f"Chromium直接起動テスト例外: {e}")
-
-                # /dev/shm のサイズ確認
-                try:
-                    shm = subprocess.check_output("df -h /dev/shm", shell=True, timeout=5).decode().strip()
-                    log_area.text(f"共有メモリ: {shm}")
-                except Exception:
-                    pass
-
             driver = setup_browser()
+
 
             # データは5行目（index4）から。ヘッダーは3行目。
             for i, row in enumerate(records[4:], start=5):
