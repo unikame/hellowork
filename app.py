@@ -136,8 +136,12 @@ def hw_select_kubun(page, kubun, kinmu, log_area):
             log_area.warning(f"   フルタイムのチェックに失敗: {e}")
 
 
-def hw_select_area(page, pref, mid_cat, cities, log_area):
-    """就業場所モーダルで 都道府県→中分類→市区町村（最大5つ）を選択して決定。"""
+def hw_select_area(page, area_block, pref, mid_cat, cities, log_area):
+    """
+    就業場所モーダルで 地方ブロック→都道府県→市区町村エリア→市区町村（最大5つ）を選択して決定。
+    area_block(E列)=関東, pref(F列)=埼玉県, mid_cat(G列)=埼玉県市部, cities(H〜L列)=[草加市,...]
+    モーダルは入れ子アコーディオン。各階層を開くと次の階層が現れる。
+    """
     try:
         page.locator("#ID_todohukenHiddenAccoBtn").click(timeout=10000)
     except Exception as e:
@@ -149,7 +153,7 @@ def hw_select_area(page, pref, mid_cat, cities, log_area):
     for _ in range(20):
         time.sleep(0.5)
         try:
-            cnt = page.evaluate("document.querySelectorAll('button.ac_headerTwo').length")
+            cnt = page.evaluate("document.querySelectorAll('div.modal.middle button.acco_header, div.modal button.acco_header').length")
         except Exception:
             cnt = 0
         if cnt and cnt > 0:
@@ -159,46 +163,64 @@ def hw_select_area(page, pref, mid_cat, cities, log_area):
         log_area.warning("   都道府県モーダルの中身が生成されませんでした（タイムアウト）。")
         return False
 
-    def open_accordion_by_text(text, level_class):
+    def open_by_text(text):
+        """モーダル内で、テキスト一致するアコーディオン見出し（acco_header）を開く"""
         if not text:
             return False
         target = _norm(text)
-        # JS側でテキスト照合してクリック（Playwrightの要素取得の癖を回避）
         for strict_mode in (1, 0):
             clicked = page.evaluate(
                 """(args) => {
-                    const [levelClass, target, strict] = args;
+                    const [target, strict] = args;
                     const norm = s => (s||'').replace(/[\\s　・/／（）()]/g, '');
-                    const btns = Array.from(document.querySelectorAll('button.' + levelClass));
+                    // モーダル内の見出しボタンを全て対象
+                    const btns = Array.from(document.querySelectorAll('div.modal button.acco_header, div.modal button[class*="acco"]'));
                     for (const b of btns) {
                         const t = norm(b.textContent);
                         if (!t) continue;
                         const match = strict ? (t === target) : (t.includes(target) || target.includes(t));
-                        if (match) { b.click(); return true; }
+                        if (match) {
+                            // 既に開いている(is-active/is-open)場合はクリックしない
+                            const cls = b.className || '';
+                            const isOpen = cls.includes('is-active') || cls.includes('is-open');
+                            if (!isOpen) { b.click(); }
+                            return true;
+                        }
                     }
                     return false;
                 }""",
-                [level_class, target, strict_mode]
+                [target, strict_mode]
             )
             if clicked:
-                time.sleep(0.8)
+                time.sleep(0.9)
                 return True
         return False
 
-    # Lv2 都道府県
-    if not open_accordion_by_text(pref, "ac_headerTwo"):
+    # Lv1 地方ブロック（E列：関東など）
+    if area_block:
+        if not open_by_text(area_block):
+            log_area.warning(f"   地方ブロック「{area_block}」が見つかりませんでした。")
+        else:
+            log_area.text(f"   地方ブロック「{area_block}」を開きました。")
+
+    # Lv2 都道府県（F列：埼玉県）
+    if not open_by_text(pref):
         try:
             names = page.evaluate(
-                "Array.from(document.querySelectorAll('button.ac_headerTwo'))"
-                ".slice(0,12).map(b => (b.textContent||'').trim())")
+                "Array.from(document.querySelectorAll('div.modal button.acco_header'))"
+                ".filter(b=>b.offsetParent!==null).slice(0,20).map(b => (b.textContent||'').trim())")
             log_area.warning(f"   都道府県「{pref}」が見つかりませんでした。候補例: {names}")
         except Exception:
             log_area.warning(f"   都道府県「{pref}」が見つかりませんでした。")
+    else:
+        log_area.text(f"   都道府県「{pref}」を開きました。")
 
-    # Lv3 中分類
+    # Lv3 市区町村エリア（G列：埼玉県市部）
     if mid_cat:
-        if not open_accordion_by_text(mid_cat, "ac_headerThree"):
-            log_area.warning(f"   中分類「{mid_cat}」が見つかりませんでした。")
+        if not open_by_text(mid_cat):
+            log_area.warning(f"   市区町村エリア「{mid_cat}」が見つかりませんでした。")
+        else:
+            log_area.text(f"   市区町村エリア「{mid_cat}」を開きました。")
 
     # Lv4 市区町村（最大5つ）
     for city in cities:
