@@ -140,246 +140,110 @@ def hw_select_area(page, area_block, pref, mid_cat, cities, log_area):
     """
     就業場所モーダルで 地方ブロック→都道府県→市区町村エリア→市区町村（最大5つ）を選択して決定。
     area_block(E列)=関東, pref(F列)=埼玉県, mid_cat(G列)=埼玉県市部, cities(H〜L列)=[草加市,...]
-    モーダルは入れ子アコーディオン。各階層を開くと次の階層が現れる。
+    シンプルに：「都道府県から選択」の見出しを持つモーダルの中だけを操作範囲とする。
     """
+    # 都道府県モーダルを開くボタンをクリック
     try:
         page.locator("#ID_todohukenHiddenAccoBtn").click(timeout=10000)
     except Exception as e:
         log_area.warning(f"   都道府県モーダルを開けませんでした: {e}")
         return False
 
-    # モーダルの中身がJS生成されるまで待つ（最大10秒）
-    appeared = False
-    for _ in range(20):
-        time.sleep(0.5)
-        try:
-            cnt = page.evaluate("document.querySelectorAll('div.modal.middle button.acco_header, div.modal button.acco_header').length")
-        except Exception:
-            cnt = 0
-        if cnt and cnt > 0:
-            appeared = True
-            break
-    if not appeared:
-        log_area.warning("   都道府県モーダルの中身が生成されませんでした（タイムアウト）。")
+    # モーダルが実際に画面に表示されるまで待つ
+    try:
+        page.get_by_text("都道府県から選択", exact=False).first.wait_for(state="visible", timeout=10000)
+    except Exception:
+        log_area.warning("   都道府県モーダルの表示を確認できませんでした。")
         return False
+    time.sleep(0.5)
 
-    def open_by_text(text):
-        """モーダル内で、テキスト一致するアコーディオン見出し（acco_header）を開く"""
-        if not text:
+    # 「都道府県から選択」という見出しを含むモーダルコンテナを特定し、その中だけを操作範囲にする
+    try:
+        modal_scope = page.locator("div.modal", has_text="都道府県から選択").first
+        if modal_scope.count() == 0 or not modal_scope.is_visible():
+            modal_scope = page  # フォールバック：ページ全体
+    except Exception:
+        modal_scope = page
+
+    def click_visible_text_in_scope(label):
+        """操作範囲（都道府県モーダル）内で、画面に見えているテキストを持つ要素をクリック"""
+        if not label:
             return False
-        target = _norm(text)
-        for strict_mode in (1, 0):
-            clicked = page.evaluate(
-                """(args) => {
-                    const [target, strict] = args;
-                    const norm = s => (s||'').replace(/[\\s　・/／（）()]/g, '');
-                    // モーダル内の見出しボタンを全て対象
-                    const btns = Array.from(document.querySelectorAll('div.modal button.acco_header, div.modal button[class*="acco"]'));
-                    for (const b of btns) {
-                        const t = norm(b.textContent);
-                        if (!t) continue;
-                        const match = strict ? (t === target) : (t.includes(target) || target.includes(t));
-                        if (match) {
-                            // 既に開いている(is-active/is-open)場合はクリックしない
-                            const cls = b.className || '';
-                            const isOpen = cls.includes('is-active') || cls.includes('is-open');
-                            if (!isOpen) { b.click(); }
-                            return true;
-                        }
-                    }
-                    return false;
-                }""",
-                [target, strict_mode]
-            )
-            if clicked:
-                time.sleep(0.9)
-                return True
+        try:
+            locator = modal_scope.get_by_text(label, exact=False)
+            n = locator.count()
+            for i in range(n):
+                el = locator.nth(i)
+                if el.is_visible():
+                    el.click(timeout=5000)
+                    return True
+        except Exception:
+            pass
         return False
 
     # Lv1 地方ブロック（E列：関東など）
     if area_block:
-        if not open_by_text(area_block):
-            log_area.warning(f"   地方ブロック「{area_block}」が見つかりませんでした。")
-        else:
+        if click_visible_text_in_scope(area_block):
             log_area.text(f"   地方ブロック「{area_block}」を開きました。")
+            time.sleep(0.6)
+        else:
+            log_area.warning(f"   地方ブロック「{area_block}」が見つかりませんでした。")
 
     # Lv2 都道府県（F列：埼玉県）
-    if not open_by_text(pref):
-        try:
-            names = page.evaluate(
-                "Array.from(document.querySelectorAll('div.modal button.acco_header'))"
-                ".filter(b=>b.offsetParent!==null).slice(0,20).map(b => (b.textContent||'').trim())")
-            log_area.warning(f"   都道府県「{pref}」が見つかりませんでした。候補例: {names}")
-        except Exception:
-            log_area.warning(f"   都道府県「{pref}」が見つかりませんでした。")
-    else:
+    if click_visible_text_in_scope(pref):
         log_area.text(f"   都道府県「{pref}」を開きました。")
+        time.sleep(0.6)
+    else:
+        log_area.warning(f"   都道府県「{pref}」が見つかりませんでした。")
 
     # Lv3 市区町村エリア（G列：埼玉県市部）
     if mid_cat:
-        if not open_by_text(mid_cat):
-            log_area.warning(f"   市区町村エリア「{mid_cat}」が見つかりませんでした。")
-        else:
+        if click_visible_text_in_scope(mid_cat):
             log_area.text(f"   市区町村エリア「{mid_cat}」を開きました。")
-
-    # ＝＝＝ 診断：市区町村チェック開始前のモーダル一覧 ＝＝＝
-    try:
-        modal_names_before = page.evaluate(
-            """() => {
-                const modals = Array.from(document.querySelectorAll('div.modal, div[class*="modal"]'));
-                const result = [];
-                for (const m of modals) {
-                    const s = window.getComputedStyle(m);
-                    if (s.display === 'none' || s.visibility === 'hidden') continue;
-                    result.push((m.className||'').slice(0,60));
-                }
-                return result;
-            }"""
-        )
-        log_area.info(f"   【市区町村チェック前のモーダル】{modal_names_before}")
-    except Exception:
-        pass
+            time.sleep(0.6)
+        else:
+            log_area.warning(f"   市区町村エリア「{mid_cat}」が見つかりませんでした。")
 
     # Lv4 市区町村（最大5つ）
     for city in cities:
         if not city:
             continue
-        city_norm = _norm(city)
-        checked = False
-        for strict_mode in (1, 0):
-            checked = page.evaluate(
-                """(args) => {
-                    const [target, strict] = args;
-                    const norm = s => (s||'').replace(/[\\s　・/／（）()]/g, '');
-                    const labels = Array.from(document.querySelectorAll('div.modal.middle label.forLabel'));
-                    for (const lb of labels) {
-                        const t = norm(lb.textContent);
-                        if (!t) continue;
-                        const match = strict ? (t === target) : (t.includes(target) || target.includes(t));
-                        if (match) {
-                            const inp = lb.querySelector('input');
-                            if (inp && !inp.checked) { inp.click(); }
-                            return true;
-                        }
-                    }
-                    return false;
-                }""",
-                [city_norm, strict_mode]
-            )
-            if checked:
-                break
-        if not checked:
-            log_area.warning(f"   市区町村「{city}」が見つかりませんでした。")
-        else:
+        if click_visible_text_in_scope(city):
             log_area.text(f"   市区町村「{city}」を選択しました。")
+            time.sleep(0.4)
+        else:
+            log_area.warning(f"   市区町村「{city}」が見つかりませんでした。")
 
-        # ＝＝＝ 診断：この市区町村チェック直後のモーダル一覧 ＝＝＝
-        try:
-            modal_names_after = page.evaluate(
-                """() => {
-                    const modals = Array.from(document.querySelectorAll('div.modal, div[class*="modal"]'));
-                    const result = [];
-                    for (const m of modals) {
-                        const s = window.getComputedStyle(m);
-                        if (s.display === 'none' || s.visibility === 'hidden') continue;
-                        result.push((m.className||'').slice(0,60));
-                    }
-                    return result;
-                }"""
-            )
-            log_area.info(f"   【「{city}」チェック直後のモーダル】{modal_names_after}")
-        except Exception:
-            pass
-
-    # 決定ボタン（都道府県モーダルは動的生成。表示中モーダル内の「決定」をJSで確実に押す）
+    # 決定ボタン：都道府県モーダル（操作範囲）内に見えている「決定」をクリック
+    time.sleep(0.5)
     try:
-        time.sleep(0.5)
-
-        # ＝＝＝ 診断：表示中モーダル内の全ボタン候補を列挙 ＝＝＝
-        try:
-            btn_list = page.evaluate(
-                """() => {
-                    const modals = Array.from(document.querySelectorAll('div.modal, div[class*="modal"]'));
-                    const result = [];
-                    for (const modal of modals) {
-                        const style = window.getComputedStyle(modal);
-                        if (style.display === 'none' || style.visibility === 'hidden') continue;
-                        const modalClass = (modal.className || '').slice(0, 60);
-                        const btns = Array.from(modal.querySelectorAll('input, button, a, div[onclick], span[onclick]'));
-                        for (const b of btns) {
-                            const label = (b.value || b.textContent || '').trim().slice(0, 20);
-                            if (!label) continue;
-                            result.push(`[modal:${modalClass}] <${b.tagName}> "${label}" class="${(b.className||'').slice(0,50)}"`);
-                        }
-                    }
-                    return result.slice(0, 30);
-                }"""
-            )
-            log_area.info("   【モーダル内ボタン候補】\n   " + "\n   ".join(btn_list) if btn_list else "   モーダル内にボタンが見つかりませんでした（表示中モーダル自体が無い可能性）。")
-        except Exception as e:
-            log_area.warning(f"   ボタン列挙診断に失敗: {e}")
-
-        clicked = page.evaluate(
-            """() => {
-                // 表示されているモーダルを探す
-                const modals = Array.from(document.querySelectorAll('div.modal, div[class*="modal"]'));
-                for (const modal of modals) {
-                    // 画面に表示されているモーダルのみ対象
-                    const style = window.getComputedStyle(modal);
-                    if (style.display === 'none' || style.visibility === 'hidden') continue;
-                    // 職種・条件モーダルは除外（都道府県モーダルの決定だけ押す）
-                    const cls = modal.className || '';
-                    if (cls.includes('EasyShokusyu') || cls.includes('Jyouken')) continue;
-                    // モーダル内の「決定」ボタンを探す
-                    const btns = Array.from(modal.querySelectorAll('input, button, a'));
-                    for (const b of btns) {
-                        const label = (b.value || b.textContent || '').trim();
-                        if (label === '決定') {
-                            b.click();
-                            return true;
-                        }
-                    }
-                }
-                return false;
-            }"""
-        )
-        if not clicked:
-            # フォールバック：従来のlocator方式
-            decide = page.locator(
-                "//div[contains(@class,'modal')]//input[@value='決定' and not(@onclick[contains(.,'EasyShokusyu')]) and not(@onclick[contains(.,'Jyouken')])]"
-            )
-            for i in range(decide.count()):
-                b = decide.nth(i)
-                if b.is_visible():
-                    b.click(force=True, timeout=5000)
-                    clicked = True
-                    break
+        decide_locator = modal_scope.get_by_text("決定", exact=True)
+        n = decide_locator.count()
+        clicked = False
+        for i in range(n):
+            el = decide_locator.nth(i)
+            if el.is_visible():
+                el.click(timeout=5000)
+                clicked = True
+                break
         if clicked:
             log_area.text("   就業場所の「決定」を押しました。")
         else:
             log_area.warning("   就業場所の決定ボタンが見つかりませんでした。")
         time.sleep(1.0)
-
-        # ＝＝＝ 診断：本当にフォームへ反映されたか確認 ＝＝＝
-        try:
-            hidden_val = page.evaluate("document.querySelector('#ID_todohukenHidden')?.value || ''")
-            label_val = page.evaluate("document.querySelector('#ID_todohukenNameLbl')?.textContent || ''")
-            modal_still_open = page.evaluate(
-                "Array.from(document.querySelectorAll('div.modal')).some(m => {"
-                "const s = window.getComputedStyle(m); return s.display !== 'none' && s.visibility !== 'hidden';"
-                "})"
-            )
-            log_area.info(
-                f"   【反映確認】隠しフィールド値: {hidden_val or '（空）'} / "
-                f"選択中ラベル表示: {label_val.strip() or '（空）'} / "
-                f"モーダルまだ開いている: {modal_still_open}"
-            )
-        except Exception as e:
-            log_area.warning(f"   反映確認の診断に失敗: {e}")
     except Exception as e:
         log_area.warning(f"   就業場所の決定ボタン押下に失敗: {e}")
         return False
+
+    # 反映確認
+    try:
+        label_val = page.evaluate("document.querySelector('#ID_todohukenNameLbl')?.textContent || ''")
+        log_area.info(f"   【反映確認】選択中ラベル表示: {label_val.strip() or '（空）'}")
+    except Exception:
+        pass
+
     return True
+
 
 
 def hw_select_shokusyu(page, dai_name, sho_list, log_area):
