@@ -498,6 +498,59 @@ def hw_extract_detail(soup, dai_shokusyu):
         m = re.search(r'0\d{1,4}-\d{1,4}-\d{3,4}', soup.get_text())
         phone = m.group(0) if m else NA
 
+    # ＝＝＝ 就業場所セクションから「最寄り駅・交通手段・所要時間」を抽出 ＝＝＝
+    moyori_info = ""
+    shugyo_cell = None
+    for th in soup.find_all(['th', 'dt']):
+        t = th.get_text(strip=True)
+        if t == "就業場所":
+            shugyo_cell = th.find_next_sibling(['td', 'dd'])
+            if shugyo_cell is None:
+                shugyo_cell = th.find_next(['td', 'dd'])
+            break
+    if shugyo_cell is None:
+        for tr in soup.find_all('tr'):
+            tds = tr.find_all('td')
+            if len(tds) >= 2 and tds[0].get_text(strip=True) == "就業場所":
+                shugyo_cell = tds[1]
+                break
+
+    if shugyo_cell:
+        cell_text = shugyo_cell.get_text(separator="\n", strip=True)
+        lines = [l.strip() for l in cell_text.split("\n") if l.strip()]
+        current_label = ""
+        moyori_parts = {"最寄り駅": "", "交通手段": "", "所要時間": ""}
+        for line in lines:
+            is_label = False
+            if "最寄り駅から" in line and "交通手段" in line:
+                current_label = "交通手段"
+                is_label = True
+            elif "最寄り駅" in line and len(line) < 10:
+                current_label = "最寄り駅"
+                is_label = True
+            elif "所要時間" in line and len(line) < 10:
+                current_label = "所要時間"
+                is_label = True
+            elif "受動喫煙" in line or "地図表示" in line:
+                current_label = ""
+                is_label = True
+            if not is_label and current_label:
+                if moyori_parts.get(current_label):
+                    moyori_parts[current_label] += " " + line
+                else:
+                    moyori_parts[current_label] = line
+
+        parts_list = []
+        if moyori_parts["最寄り駅"]:
+            parts_list.append(moyori_parts["最寄り駅"])
+        if moyori_parts["交通手段"]:
+            parts_list.append(moyori_parts["交通手段"])
+        if moyori_parts["所要時間"]:
+            parts_list.append(moyori_parts["所要時間"])
+        moyori_info = " ".join(parts_list) if parts_list else NA
+    else:
+        moyori_info = NA
+
     # ＝＝＝ 担当者セクションから個別項目を抽出 ＝＝＝
     # ハローワークの「担当者」セクションには、課係名・役職名、担当者名、電話番号、FAX、Eメールが
     # まとめて記載されている。これらをサブラベルで分割して取得する。
@@ -608,7 +661,7 @@ def hw_extract_detail(soup, dai_shokusyu):
         pick("ID_shigotoNy", ["仕事内容", "職務内容"]),          # M 仕事内容
         pick("", ["雇用形態"]),                                 # N 雇用形態
         pick("ID_shgBsJusho", ["就業場所"]),                    # O 就業場所
-        pick("", ["最寄り駅", "交通手段", "所要時間"]),          # P 最寄り駅→選考場所
+        moyori_info,                                           # P 最寄り駅・交通手段・所要時間
         pick("", ["マイカー通勤"]),                             # Q マイカー通勤
         pick("", ["必要な免許・資格", "免許・資格", "必要な資格"]), # R 必要な免許・資格
         pick("", ["基本給", "基本給(a)", "基本給（a）"]),        # S 基本給
