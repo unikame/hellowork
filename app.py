@@ -22,11 +22,30 @@ def _start_dbus():
         _DBUS_DIAG.append(f"mkdir {_DBUS_DIR}: OK")
     except Exception as e:
         _DBUS_DIAG.append(f"mkdir {_DBUS_DIR} 失敗: {e}")
-    # システムバスを /tmp のソケットで起動
+    # システムバスを /tmp のソケットで起動（設定ファイルが必須）
+    _DBUS_CONF = f'{_DBUS_DIR}/system.conf'
+    try:
+        with open(_DBUS_CONF, 'w') as f:
+            f.write(f'''<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+  <type>system</type>
+  <listen>{_DBUS_SYSTEM_ADDR}</listen>
+  <auth>EXTERNAL</auth>
+  <policy context="default">
+    <allow send_destination="*" eavesdrop="true"/>
+    <allow eavesdrop="true"/>
+    <allow own="*"/>
+  </policy>
+</busconfig>
+''')
+        _DBUS_DIAG.append("設定ファイル生成: OK")
+    except Exception as e:
+        _DBUS_DIAG.append(f"設定ファイル生成失敗: {e}")
     try:
         p = subprocess.Popen(
             ['dbus-daemon', '--nofork', '--nopidfile',
-             f'--address={_DBUS_SYSTEM_ADDR}'],
+             f'--config-file={_DBUS_CONF}'],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         time.sleep(1.5)
