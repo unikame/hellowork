@@ -95,28 +95,36 @@ st.set_page_config(page_title="ASUMO ハローワーク求人取得", page_icon=
 
 
 def diagnose_chromium():
-    """Chromiumを最小構成で直接起動し、生のstderrを取得する（クラッシュ原因の特定用）"""
+    """Chromiumを複数構成で直接起動し、生のstderrを取得する（クラッシュ原因の特定用）"""
     chrome_bin = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
     if not chrome_bin:
         return "Chromium本体が見つかりません"
+    base = ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
     tests = [
-        ("最小構成", ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage',
-                    '--disable-gpu', '--dump-dom', 'about:blank']),
-        ("単一プロセス", ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage',
-                     '--disable-gpu', '--single-process', '--no-zygote',
-                     '--dump-dom', 'about:blank']),
+        ("最小構成", base + ['--dump-dom', 'about:blank']),
+        ("crashpad無効", base + ['--disable-crashpad', '--disable-crash-reporter',
+                              '--disable-features=Crashpad', '--dump-dom', 'about:blank']),
+        ("メモリ抑制", base + ['--single-process', '--no-zygote', '--disable-crashpad',
+                           '--disable-gpu-sandbox', '--disable-dev-tools',
+                           '--disable-features=Crashpad,VizDisplayCompositor',
+                           '--js-flags=--max-old-space-size=256',
+                           '--dump-dom', 'about:blank']),
     ]
     results = []
     for name, args in tests:
         try:
             r = subprocess.run([chrome_bin] + args, capture_output=True, text=True, timeout=20)
             if r.returncode == 0:
-                results.append(f"【{name}】成功（起動OK）")
+                results.append(f"【{name}】★成功★（起動OK）")
             else:
-                # stderrの最後の方に本当の原因が出ることが多い
                 err = r.stderr.strip()
-                tail = err[-600:] if len(err) > 600 else err
-                results.append(f"【{name}】失敗 code={r.returncode}\n{tail}")
+                # 先頭400字（本当の原因）＋末尾200字を表示
+                head = err[:400]
+                tail = err[-200:] if len(err) > 600 else ""
+                msg = f"【{name}】失敗 code={r.returncode}\n[先頭] {head}"
+                if tail:
+                    msg += f"\n[末尾] {tail}"
+                results.append(msg)
         except subprocess.TimeoutExpired:
             results.append(f"【{name}】タイムアウト（20秒）")
         except Exception as e:
