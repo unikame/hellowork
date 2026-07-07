@@ -173,6 +173,64 @@ def hw_select_area(page, area_block, pref, mid_cat, cities, log_area):
             pass
         return False
 
+    def click_acco_header(label):
+        """button.acco_headerの中からテキスト一致するものを探し、buttonをクリックして展開する。
+        labelをクリックするとチェックだけ入ってアコーディオンが開かないため、button自体をクリックする。"""
+        if not label:
+            return False
+        target = _norm(label)
+        for strict_mode in (1, 0):
+            clicked = page.evaluate(
+                """(args) => {
+                    const [target, strict] = args;
+                    const norm = s => (s||'').replace(/[\\s　・/／（）()]/g, '');
+                    const btns = Array.from(document.querySelectorAll('button.acco_header'));
+                    for (const b of btns) {
+                        const t = norm(b.textContent);
+                        if (!t) continue;
+                        const match = strict ? (t === target) : (t.includes(target) || target.includes(t));
+                        if (match && b.offsetParent !== null) {
+                            b.click();
+                            return true;
+                        }
+                    }
+                    return false;
+                }""",
+                [target, strict_mode]
+            )
+            if clicked:
+                return True
+        return False
+
+    def click_checkbox_by_text(label):
+        """チェックボックスのラベルテキストで探してチェックを入れる（市区町村用）"""
+        if not label:
+            return False
+        target = _norm(label)
+        for strict_mode in (1, 0):
+            checked = page.evaluate(
+                """(args) => {
+                    const [target, strict] = args;
+                    const norm = s => (s||'').replace(/[\\s　・/／（）()]/g, '');
+                    const labels = Array.from(document.querySelectorAll('label.forLabel'));
+                    for (const lb of labels) {
+                        const t = norm(lb.textContent);
+                        if (!t) continue;
+                        const match = strict ? (t === target) : (t.includes(target) || target.includes(t));
+                        if (match && lb.offsetParent !== null) {
+                            const inp = lb.querySelector('input[type="checkbox"]');
+                            if (inp && !inp.checked) { inp.click(); }
+                            return true;
+                        }
+                    }
+                    return false;
+                }""",
+                [target, strict_mode]
+            )
+            if checked:
+                return True
+        return False
+
     def wait_for_text_visible(text, timeout_sec=10):
         """指定テキストが画面に見えるようになるまで待つ"""
         for _ in range(timeout_sec * 2):
@@ -185,41 +243,38 @@ def hw_select_area(page, area_block, pref, mid_cat, cities, log_area):
                 pass
         return False
 
-    # Lv1 地方ブロック（E列：関東など）
+    # Lv1 地方ブロック（E列：関東など）— get_by_textでOK（チェックボックスが非表示のため）
     if area_block:
         if click_visible_text_in_scope(area_block):
             log_area.text(f"   地方ブロック「{area_block}」を開きました。")
-            # 次の階層（都道府県名）が見えるまで待つ
             if pref:
                 wait_for_text_visible(pref, timeout_sec=10)
         else:
             log_area.warning(f"   地方ブロック「{area_block}」が見つかりませんでした。")
 
-    # Lv2 都道府県（F列：埼玉県）
-    if click_visible_text_in_scope(pref):
+    # Lv2 都道府県（F列：埼玉県）— button.acco_headerをクリックして展開
+    if click_acco_header(pref):
         log_area.text(f"   都道府県「{pref}」を開きました。")
-        # 次の階層（市区町村エリア名）が見えるまで待つ
         if mid_cat:
             wait_for_text_visible(mid_cat, timeout_sec=10)
     else:
         log_area.warning(f"   都道府県「{pref}」が見つかりませんでした。")
 
-    # Lv3 市区町村エリア（G列：埼玉県市部）
+    # Lv3 市区町村エリア（G列：埼玉県市部）— button.acco_headerをクリックして展開
     if mid_cat:
-        if click_visible_text_in_scope(mid_cat):
+        if click_acco_header(mid_cat):
             log_area.text(f"   市区町村エリア「{mid_cat}」を開きました。")
-            # 次の階層（市区町村名）が見えるまで待つ（AJAXで動的取得されるため長めに）
             first_city = next((c for c in cities if c), None)
             if first_city:
                 wait_for_text_visible(first_city, timeout_sec=15)
         else:
             log_area.warning(f"   市区町村エリア「{mid_cat}」が見つかりませんでした。")
 
-    # Lv4 市区町村（最大5つ）
+    # Lv4 市区町村（最大5つ）— チェックボックスにチェックを入れる
     for city in cities:
         if not city:
             continue
-        if click_visible_text_in_scope(city):
+        if click_checkbox_by_text(city):
             log_area.text(f"   市区町村「{city}」を選択しました。")
             time.sleep(0.4)
         else:
