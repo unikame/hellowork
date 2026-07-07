@@ -17,6 +17,11 @@ MAIN_SHEET_GID = 1003420488  # 「求人依頼シート」
 
 HW_SEARCH_URL = "https://www.hellowork.mhlw.go.jp/kensaku/GECA110010.do?action=initDisp&screenId=GECA110010"
 
+# ＝＝＝ 求職番号（コードに埋め込み）＝＝＝
+# 「60049-58004503」を前半5桁・後半8桁に分割
+HW_KYUSHOKU_NO_JO = "60049"     # 前半5桁（ID_kSNoJo）
+HW_KYUSHOKU_NO_GE = "58004503"  # 後半8桁（ID_kSNoGe）
+
 st.set_page_config(page_title="ASUMO ハローワーク求人取得", page_icon="🪁",
                    layout="wide", initial_sidebar_state="expanded")
 
@@ -74,6 +79,34 @@ def pw_text_of(loc):
             return loc.evaluate("el => el.textContent || ''")
         except Exception:
             return ""
+
+
+def hw_input_kyushoku_no(page, log_area):
+    """求職番号を入力する（前半5桁 ID_kSNoJo ＋ 後半8桁 ID_kSNoGe）。"""
+    try:
+        # 求職番号入力アコーディオンが閉じている場合は開く
+        try:
+            acc = page.locator("button.arrowBtn_arrowLocationKyushoku, button:has-text('求職番号入力')").first
+            # 既定で開いている（is-open）ことが多いが、閉じていれば開く
+            content = page.locator("div.ksno-input-default-open")
+            if content.count() > 0:
+                cls = content.first.get_attribute("class") or ""
+                if "is-open" not in cls:
+                    acc.click(force=True, timeout=5000)
+                    time.sleep(0.5)
+        except Exception:
+            pass
+
+        jo = page.locator("#ID_kSNoJo")
+        ge = page.locator("#ID_kSNoGe")
+        if jo.count() > 0 and ge.count() > 0:
+            jo.fill(HW_KYUSHOKU_NO_JO, timeout=5000)
+            ge.fill(HW_KYUSHOKU_NO_GE, timeout=5000)
+            log_area.text(f"   求職番号 {HW_KYUSHOKU_NO_JO}-{HW_KYUSHOKU_NO_GE} を入力しました。")
+        else:
+            log_area.warning("   求職番号の入力欄が見つかりませんでした。")
+    except Exception as e:
+        log_area.warning(f"   求職番号の入力に失敗: {e}")
 
 
 def hw_select_kubun(page, kubun, kinmu, log_area):
@@ -621,6 +654,7 @@ if st.button("取得を開始", type="primary"):
                     time.sleep(2.5)
 
                     try:
+                        hw_input_kyushoku_no(page, log_area)
                         hw_select_kubun(page, kubun, kinmu_jikan, log_area)
                         hw_select_area(page, pref, mid_cat, cities, log_area)
                         hw_select_shokusyu(page, dai_shokusyu, sho_list, log_area)
