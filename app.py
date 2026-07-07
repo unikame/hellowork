@@ -498,55 +498,13 @@ def hw_extract_detail(soup, dai_shokusyu):
         m = re.search(r'0\d{1,4}-\d{1,4}-\d{3,4}', soup.get_text())
         phone = m.group(0) if m else NA
 
-    # ＝＝＝ 就業場所セクションから「最寄り駅・交通手段・所要時間」を抽出 ＝＝＝
-    # 最寄り駅情報はtd内のサブラベル（bタグ太字）として記載されている
-    moyori_info = ""
-    try:
-        moyori_parts = []
-        # ページ全体からbタグで「最寄り駅」を探す
-        for b_tag in soup.find_all(['b', 'strong']):
-            b_text = b_tag.get_text(strip=True)
-            if "最寄り駅" in b_text and "交通手段" not in b_text:
-                # 「最寄り駅」の次のテキスト（路線名＋駅名）を取得
-                next_text = ""
-                for sib in b_tag.next_siblings:
-                    t = sib.get_text(strip=True) if hasattr(sib, 'get_text') else str(sib).strip()
-                    if t and t not in ["", "\n"]:
-                        next_text = t
-                        break
-                if next_text:
-                    moyori_parts.append(next_text)
-            elif "交通手段" in b_text and "所要時間" in b_text:
-                # 「最寄り駅から就業場所までの交通手段　所要時間」の次のテキストを取得
-                next_text = ""
-                for sib in b_tag.next_siblings:
-                    t = sib.get_text(strip=True) if hasattr(sib, 'get_text') else str(sib).strip()
-                    if t and t not in ["", "\n"]:
-                        next_text = t
-                        break
-                if next_text:
-                    moyori_parts.append(next_text)
-            elif "交通手段" in b_text:
-                next_text = ""
-                for sib in b_tag.next_siblings:
-                    t = sib.get_text(strip=True) if hasattr(sib, 'get_text') else str(sib).strip()
-                    if t and t not in ["", "\n"]:
-                        next_text = t
-                        break
-                if next_text:
-                    moyori_parts.append(next_text)
-            elif b_text == "所要時間":
-                next_text = ""
-                for sib in b_tag.next_siblings:
-                    t = sib.get_text(strip=True) if hasattr(sib, 'get_text') else str(sib).strip()
-                    if t and t not in ["", "\n"]:
-                        next_text = t
-                        break
-                if next_text:
-                    moyori_parts.append(next_text)
-        moyori_info = " ".join(moyori_parts) if moyori_parts else NA
-    except Exception:
-        moyori_info = NA
+    # ＝＝＝ 最寄り駅・交通手段・所要時間（IDで直接取得）＝＝＝
+    moyori_parts = []
+    for id_name in ["ID_shgBsMyorEki", "ID_shgBsKotsuShudan", "ID_shgBsShyoJn"]:
+        v = by_id(id_name)
+        if v:
+            moyori_parts.append(v)
+    moyori_info = " ".join(moyori_parts) if moyori_parts else NA
 
     # ＝＝＝ 担当者セクションから個別項目を抽出 ＝＝＝
     # ハローワークの「担当者」セクションには、課係名・役職名、担当者名、電話番号、FAX、Eメールが
