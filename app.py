@@ -9,35 +9,49 @@ import urllib.parse
 import subprocess
 
 # ＝＝＝ D-Busが無いコンテナ環境でChromiumを起動するための設定（最優先） ＝＝＝
+_DBUS_DIAG = []
+
 def _start_dbus():
+    # dbus-daemon / dbus-launch コマンドの有無を確認
+    _DBUS_DIAG.append(f"dbus-daemon: {shutil.which('dbus-daemon') or '未検出'}")
+    _DBUS_DIAG.append(f"dbus-launch: {shutil.which('dbus-launch') or '未検出'}")
     try:
         os.makedirs('/run/dbus', exist_ok=True)
-    except Exception:
-        pass
-    # システムバスを起動（ソケットは /run/dbus/system_bus_socket に作られる）
+    except Exception as e:
+        _DBUS_DIAG.append(f"mkdir /run/dbus 失敗: {e}")
+    # システムバスを起動
     try:
-        subprocess.Popen(
+        p = subprocess.Popen(
             ['dbus-daemon', '--system', '--nofork', '--nopidfile'],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
-    except Exception:
-        pass
-    # セッションバスを起動してアドレスを取得
+        time.sleep(1.5)
+        if p.poll() is not None:
+            # すぐ終了した＝失敗
+            err = p.stderr.read().decode()[:300] if p.stderr else ""
+            _DBUS_DIAG.append(f"system bus 即終了(code={p.returncode}): {err}")
+        else:
+            _DBUS_DIAG.append("system bus 起動中")
+    except Exception as e:
+        _DBUS_DIAG.append(f"system bus 起動例外: {e}")
+    # ソケットができたか確認
+    if os.path.exists('/run/dbus/system_bus_socket'):
+        _DBUS_DIAG.append("system_bus_socket: 作成OK")
+    else:
+        _DBUS_DIAG.append("system_bus_socket: 作成されず")
+    # セッションバス
     try:
-        result = subprocess.run(
-            ['dbus-launch'],
-            capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run(['dbus-launch'], capture_output=True, text=True, timeout=5)
         for line in result.stdout.splitlines():
             if '=' in line:
                 key, _, val = line.partition('=')
                 os.environ[key] = val
-    except Exception:
-        pass
+        _DBUS_DIAG.append("session bus 起動OK")
+    except Exception as e:
+        _DBUS_DIAG.append(f"session bus 起動例外: {e}")
 
 _start_dbus()
 time.sleep(1)
-
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -648,6 +662,7 @@ if st.button("取得を開始", type="primary"):
                 else:
                     diag.append(f"{cmd_name}: 未検出")
             log_area.info("Chrome環境診断:\n" + "\n".join(diag))
+            log_area.info("D-Bus診断:\n" + "\n".join(_DBUS_DIAG))
 
             # Chromiumを直接起動して診断
             import subprocess
