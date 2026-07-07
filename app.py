@@ -2,87 +2,14 @@ import streamlit as st
 import time
 import re
 import os
-import shutil
 import json
 import base64 as _b64
 import urllib.parse
 import subprocess
-
-# ＝＝＝ D-Busが無いコンテナ環境でChromiumを起動するための設定（最優先） ＝＝＝
-_DBUS_DIAG = []
-# 書き込み権限のある /tmp 配下にD-Busソケットを作る
-_DBUS_DIR = '/tmp/dbus'
-_DBUS_SOCK = f'{_DBUS_DIR}/system_bus_socket'
-_DBUS_SYSTEM_ADDR = f'unix:path={_DBUS_SOCK}'
-
-def _start_dbus():
-    _DBUS_DIAG.append(f"dbus-daemon: {shutil.which('dbus-daemon') or '未検出'}")
-    try:
-        os.makedirs(_DBUS_DIR, exist_ok=True)
-        _DBUS_DIAG.append(f"mkdir {_DBUS_DIR}: OK")
-    except Exception as e:
-        _DBUS_DIAG.append(f"mkdir {_DBUS_DIR} 失敗: {e}")
-    # システムバスを /tmp のソケットで起動（設定ファイルが必須）
-    _DBUS_CONF = f'{_DBUS_DIR}/system.conf'
-    try:
-        with open(_DBUS_CONF, 'w') as f:
-            f.write(f'''<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-Bus Bus Configuration 1.0//EN"
- "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
-<busconfig>
-  <type>system</type>
-  <listen>{_DBUS_SYSTEM_ADDR}</listen>
-  <auth>EXTERNAL</auth>
-  <policy context="default">
-    <allow send_destination="*" eavesdrop="true"/>
-    <allow eavesdrop="true"/>
-    <allow own="*"/>
-  </policy>
-</busconfig>
-''')
-        _DBUS_DIAG.append("設定ファイル生成: OK")
-    except Exception as e:
-        _DBUS_DIAG.append(f"設定ファイル生成失敗: {e}")
-    try:
-        p = subprocess.Popen(
-            ['dbus-daemon', '--nofork', '--nopidfile',
-             f'--config-file={_DBUS_CONF}'],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        time.sleep(1.5)
-        if p.poll() is not None:
-            err = p.stderr.read().decode()[:300] if p.stderr else ""
-            _DBUS_DIAG.append(f"system bus 即終了(code={p.returncode}): {err}")
-        else:
-            _DBUS_DIAG.append("system bus 起動中")
-    except Exception as e:
-        _DBUS_DIAG.append(f"system bus 起動例外: {e}")
-    if os.path.exists(_DBUS_SOCK):
-        _DBUS_DIAG.append("system_bus_socket: 作成OK")
-        # Chromiumにこのアドレスを教える
-        os.environ['DBUS_SYSTEM_BUS_ADDRESS'] = _DBUS_SYSTEM_ADDR
-    else:
-        _DBUS_DIAG.append("system_bus_socket: 作成されず")
-    # セッションバス
-    try:
-        result = subprocess.run(['dbus-launch'], capture_output=True, text=True, timeout=5)
-        for line in result.stdout.splitlines():
-            if '=' in line:
-                key, _, val = line.partition('=')
-                os.environ[key] = val
-        _DBUS_DIAG.append("session bus 起動OK")
-    except Exception as e:
-        _DBUS_DIAG.append(f"session bus 起動例外: {e}")
-
-_start_dbus()
-time.sleep(1)
-
 import gspread
 from google.oauth2.service_account import Credentials
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 
 # ＝＝＝ 検索条件スプレッドシート ＝＝＝
 MAIN_SHEET_KEY = "1vhIfDZ1_GjLGspclN6ZvutdbWitdMO9qx6Aqhh9B4cQ"
@@ -94,84 +21,18 @@ st.set_page_config(page_title="ASUMO ハローワーク求人取得", page_icon=
                    layout="wide", initial_sidebar_state="expanded")
 
 
-def diagnose_chromium():
-    """Chromiumを複数構成で直接起動し、生のstderrを取得する（クラッシュ原因の特定用）"""
-    chrome_bin = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
-    if not chrome_bin:
-        return "Chromium本体が見つかりません"
-    base = ['--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-    tests = [
-        ("最小構成", base + ['--dump-dom', 'about:blank']),
-        ("crashpad無効", base + ['--disable-crashpad', '--disable-crash-reporter',
-                              '--disable-features=Crashpad', '--dump-dom', 'about:blank']),
-        ("メモリ抑制", base + ['--single-process', '--no-zygote', '--disable-crashpad',
-                           '--disable-gpu-sandbox', '--disable-dev-tools',
-                           '--disable-features=Crashpad,VizDisplayCompositor',
-                           '--js-flags=--max-old-space-size=256',
-                           '--dump-dom', 'about:blank']),
-    ]
-    results = []
-    for name, args in tests:
-        try:
-            r = subprocess.run([chrome_bin] + args, capture_output=True, text=True, timeout=20)
-            if r.returncode == 0:
-                results.append(f"【{name}】★成功★（起動OK）")
-            else:
-                err = r.stderr.strip()
-                # 先頭400字（本当の原因）＋末尾200字を表示
-                head = err[:400]
-                tail = err[-200:] if len(err) > 600 else ""
-                msg = f"【{name}】失敗 code={r.returncode}\n[先頭] {head}"
-                if tail:
-                    msg += f"\n[末尾] {tail}"
-                results.append(msg)
-        except subprocess.TimeoutExpired:
-            results.append(f"【{name}】タイムアウト（20秒）")
-        except Exception as e:
-            results.append(f"【{name}】例外: {e}")
-    return "\n\n".join(results)
-
-
-def setup_browser():
-    # Chromiumのユーザーデータ・キャッシュを広い /tmp に置く（/dev/shm が64MBしかないため）
-    _profile = '/tmp/chrome-profile'
-    _cache = '/tmp/chrome-cache'
+# ＝＝＝ Playwrightのブラウザを初回起動時にインストール ＝＝＝
+@st.cache_resource
+def ensure_playwright_browser():
+    """Playwright用のChromiumをインストール（初回のみ、以降キャッシュ）"""
     try:
-        os.makedirs(_profile, exist_ok=True)
-        os.makedirs(_cache, exist_ok=True)
+        subprocess.run(
+            ["playwright", "install", "chromium"],
+            capture_output=True, timeout=300, check=False
+        )
     except Exception:
         pass
-
-    options = Options()
-    options.add_argument('--headless=new')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--disable-gpu')
-    options.add_argument('--disable-extensions')
-    options.add_argument('--disable-software-rasterizer')
-    options.add_argument('--disable-setuid-sandbox')
-    options.add_argument('--disable-features=VizDisplayCompositor')
-    options.add_argument('--disable-crash-reporter')
-    options.add_argument('--disable-crashpad')
-    options.add_argument('--no-first-run')
-    options.add_argument('--no-default-browser-check')
-    options.add_argument('--disable-background-networking')
-    options.add_argument('--disable-renderer-backgrounding')
-    options.add_argument('--disable-backgrounding-occluded-windows')
-    options.add_argument(f'--user-data-dir={_profile}')
-    options.add_argument(f'--disk-cache-dir={_cache}')
-    options.add_argument('--window-size=1920,1080')
-    options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-    options.add_argument('--disable-blink-features=AutomationControlled')
-    chrome_path = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
-    driver_path = shutil.which("chromedriver") or shutil.which("chromium-driver")
-    if chrome_path:
-        options.binary_location = chrome_path
-    if driver_path:
-        driver = webdriver.Chrome(service=Service(driver_path), options=options)
-    else:
-        driver = webdriver.Chrome(options=options)
-    return driver
+    return True
 
 
 # ＝＝＝ 職種 大項目名 → モーダルsuffix ＝＝＝
@@ -202,62 +63,46 @@ def _norm(s):
     return re.sub(r'[\s　・/／（）\(\)]', '', s)
 
 
-def hw_click(driver, element):
-    """要素を確実にクリック（JSクリックでオーバーレイ回避）"""
-    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", element)
-    time.sleep(0.2)
-    driver.execute_script("arguments[0].click();", element)
-
-
-def _jstext(driver, el):
-    """非表示要素でも取得できる textContent をJS経由で取得"""
+# ＝＝＝ Playwright ブラウザ操作ヘルパー ＝＝＝
+def pw_text_of(loc):
+    """要素のtextContentを取得（非表示でも取れる）"""
     try:
-        return driver.execute_script("return arguments[0].textContent || '';", el)
+        return loc.evaluate("el => el.textContent || ''")
     except Exception:
         return ""
 
 
-def hw_select_kubun(driver, kubun, kinmu, log_area):
-    """
-    求人区分（C列＝一般求人 等）と勤務時間（D列＝パート/フルタイム）を設定。
-    C列が空欄の行はそもそも呼ばれない（呼び出し側でスキップ）。
-    """
+def hw_select_kubun(page, kubun, kinmu, log_area):
+    """求人区分（C列）と勤務時間（D列＝パート/フルタイム）を設定。"""
     # 一般求人ラジオ（既定でchecked）
     try:
-        radio = driver.find_element(By.ID, "ID_kjKbnRadioBtn1")
-        if not radio.is_selected():
-            hw_click(driver, radio)
-            time.sleep(0.3)
+        radio = page.locator("#ID_kjKbnRadioBtn1")
+        if radio.count() > 0 and not radio.is_checked():
+            radio.check(force=True, timeout=5000)
     except Exception:
         pass
-    # 勤務時間（D列）：パート / フルタイム
     if kinmu and "パート" in kinmu:
         try:
-            part = driver.find_element(By.ID, "ID_ippanCKBox2")
-            if not part.is_selected():
-                hw_click(driver, part)
+            part = page.locator("#ID_ippanCKBox2")
+            if part.count() > 0 and not part.is_checked():
+                part.check(force=True, timeout=5000)
             log_area.text("   求人区分：一般求人＋パート を選択しました。")
         except Exception as e:
             log_area.warning(f"   パートのチェックに失敗: {e}")
     elif kinmu and "フルタイム" in kinmu:
         try:
-            full = driver.find_element(By.ID, "ID_ippanCKBox1")
-            if not full.is_selected():
-                hw_click(driver, full)
+            full = page.locator("#ID_ippanCKBox1")
+            if full.count() > 0 and not full.is_checked():
+                full.check(force=True, timeout=5000)
             log_area.text("   求人区分：一般求人＋フルタイム を選択しました。")
         except Exception as e:
             log_area.warning(f"   フルタイムのチェックに失敗: {e}")
 
 
-def hw_select_area(driver, pref, mid_cat, cities, log_area):
-    """
-    就業場所モーダルで 都道府県→中分類→市区町村（最大5つ）を選択して「決定」。
-    pref(F列)=埼玉県, mid_cat(G列)=埼玉県市部, cities(H〜L列)=[草加市, 越谷市, 八潮市, 三郷市, ...]
-    すべて表示テキストで照合（IDは不安定なため）。
-    """
+def hw_select_area(page, pref, mid_cat, cities, log_area):
+    """就業場所モーダルで 都道府県→中分類→市区町村（最大5つ）を選択して決定。"""
     try:
-        btn = driver.find_element(By.ID, "ID_todohukenHiddenAccoBtn")
-        hw_click(driver, btn)
+        page.locator("#ID_todohukenHiddenAccoBtn").click(timeout=10000)
     except Exception as e:
         log_area.warning(f"   都道府県モーダルを開けませんでした: {e}")
         return False
@@ -266,7 +111,10 @@ def hw_select_area(driver, pref, mid_cat, cities, log_area):
     appeared = False
     for _ in range(20):
         time.sleep(0.5)
-        cnt = driver.execute_script("return document.querySelectorAll('button.ac_headerTwo').length;")
+        try:
+            cnt = page.evaluate("document.querySelectorAll('button.ac_headerTwo').length")
+        except Exception:
+            cnt = 0
         if cnt and cnt > 0:
             appeared = True
             break
@@ -278,61 +126,59 @@ def hw_select_area(driver, pref, mid_cat, cities, log_area):
         if not text:
             return False
         target = _norm(text)
-        headers = driver.find_elements(By.CSS_SELECTOR, f"button.{level_class}")
+        headers = page.locator(f"button.{level_class}")
+        n = headers.count()
         for strict in (True, False):
-            for h in headers:
+            for i in range(n):
+                h = headers.nth(i)
                 try:
-                    htxt = _norm(_jstext(driver, h))
+                    htxt = _norm(pw_text_of(h))
                     if not htxt:
                         continue
                     matched = (htxt == target) if strict else (target in htxt or htxt in target)
                     if matched:
-                        hw_click(driver, h)
+                        h.click(force=True, timeout=5000)
                         time.sleep(0.8)
                         return True
                 except Exception:
                     continue
         return False
 
-    # Lv2 都道府県（F列）
+    # Lv2 都道府県
     if not open_accordion_by_text(pref, "ac_headerTwo"):
         try:
-            names = driver.execute_script(
-                "return Array.from(document.querySelectorAll('button.ac_headerTwo'))"
-                ".slice(0,12).map(b => (b.textContent||'').trim());")
+            names = page.evaluate(
+                "Array.from(document.querySelectorAll('button.ac_headerTwo'))"
+                ".slice(0,12).map(b => (b.textContent||'').trim())")
             log_area.warning(f"   都道府県「{pref}」が見つかりませんでした。候補例: {names}")
         except Exception:
             log_area.warning(f"   都道府県「{pref}」が見つかりませんでした。")
 
-    # Lv3 中分類（G列）
+    # Lv3 中分類
     if mid_cat:
         if not open_accordion_by_text(mid_cat, "ac_headerThree"):
-            try:
-                names = driver.execute_script(
-                    "return Array.from(document.querySelectorAll('button.ac_headerThree'))"
-                    ".filter(b=>b.offsetParent!==null).slice(0,12).map(b => (b.textContent||'').trim());")
-                log_area.warning(f"   中分類「{mid_cat}」が見つかりませんでした。候補例: {names}")
-            except Exception:
-                log_area.warning(f"   中分類「{mid_cat}」が見つかりませんでした。")
+            log_area.warning(f"   中分類「{mid_cat}」が見つかりませんでした。")
 
-    # Lv4 市区町村（H〜L列、最大5つ）
+    # Lv4 市区町村（最大5つ）
     for city in cities:
         if not city:
             continue
         city_norm = _norm(city)
         checked = False
         for strict in (True, False):
-            labels = driver.find_elements(By.CSS_SELECTOR, "div.modal.middle label.forLabel")
-            for lb in labels:
+            labels = page.locator("div.modal.middle label.forLabel")
+            n = labels.count()
+            for i in range(n):
+                lb = labels.nth(i)
                 try:
-                    ltxt = _norm(_jstext(driver, lb))
+                    ltxt = _norm(pw_text_of(lb))
                     if not ltxt:
                         continue
                     matched = (ltxt == city_norm) if strict else (city_norm in ltxt or ltxt in city_norm)
                     if matched:
-                        inp = lb.find_element(By.TAG_NAME, "input")
-                        if not inp.is_selected():
-                            hw_click(driver, inp)
+                        inp = lb.locator("input")
+                        if not inp.is_checked():
+                            inp.check(force=True, timeout=5000)
                         checked = True
                         break
                 except Exception:
@@ -347,43 +193,24 @@ def hw_select_area(driver, pref, mid_cat, cities, log_area):
     # 決定ボタン
     try:
         time.sleep(0.3)
-        decided = False
-        cand = driver.find_elements(
-            By.XPATH,
+        decide = page.locator(
             "//div[contains(@class,'modal')]//input[@value='決定' and not(@onclick[contains(.,'EasyShokusyu')]) and not(@onclick[contains(.,'Jyouken')])]"
-            " | //div[contains(@class,'modal')]//button[contains(text(),'決定')]")
-        for b in cand:
-            try:
-                if b.is_displayed():
-                    hw_click(driver, b)
-                    decided = True
+        )
+        if decide.count() > 0:
+            for i in range(decide.count()):
+                b = decide.nth(i)
+                if b.is_visible():
+                    b.click(force=True, timeout=5000)
                     break
-            except Exception:
-                continue
-        if not decided:
-            for b in cand:
-                try:
-                    hw_click(driver, b)
-                    decided = True
-                    break
-                except Exception:
-                    continue
         time.sleep(1.0)
-        if not decided:
-            log_area.warning("   就業場所の決定ボタンが見つかりませんでした。")
-            return False
     except Exception as e:
         log_area.warning(f"   就業場所の決定ボタン押下に失敗: {e}")
         return False
     return True
 
 
-def hw_select_shokusyu(driver, dai_name, sho_list, log_area):
-    """
-    職種：M列の大項目を開き、N/O/P列の小項目にチェックを入れて決定。
-    dai_name(M列)=清掃・軽作業, sho_list(N/O/P列)=[包装・ピッキング, 洗い場（食器）, その他]
-    小項目が全て空なら「こだわらない」をチェック。
-    """
+def hw_select_shokusyu(page, dai_name, sho_list, log_area):
+    """職種：M列の大項目を開き、N/O/P列の小項目にチェックを入れて決定。"""
     if not dai_name:
         return
     nm = _norm(dai_name)
@@ -397,34 +224,28 @@ def hw_select_shokusyu(driver, dai_name, sho_list, log_area):
         return
 
     try:
-        # 大項目チェックボックスをクリックしてモーダルを開く
-        dai = driver.find_element(By.CSS_SELECTOR, f"input.easyShokusyuKNo{suffix}")
-        hw_click(driver, dai)
+        page.locator(f"input.easyShokusyuKNo{suffix}").first.click(force=True, timeout=8000)
         time.sleep(0.8)
-
-        # モーダル内スコープ
         modal_sel = f"div.modalEasyShokusyuBox{suffix}"
-        targets = [s for s in sho_list if s]
-
-        if not targets:
-            # 小項目指定なし → こだわらない
-            targets = ["こだわらない"]
+        targets = [s for s in sho_list if s] or ["こだわらない"]
 
         for sho in targets:
             sho_norm = _norm(sho)
             hit = False
             for strict in (True, False):
-                labels = driver.find_elements(By.CSS_SELECTOR, f"{modal_sel} label")
-                for lb in labels:
+                labels = page.locator(f"{modal_sel} label")
+                n = labels.count()
+                for i in range(n):
+                    lb = labels.nth(i)
                     try:
-                        ltxt = _norm(_jstext(driver, lb))
+                        ltxt = _norm(pw_text_of(lb))
                         if not ltxt:
                             continue
                         matched = (ltxt == sho_norm) if strict else (sho_norm in ltxt or ltxt in sho_norm)
                         if matched:
-                            inp = lb.find_element(By.TAG_NAME, "input")
-                            if not inp.is_selected():
-                                hw_click(driver, inp)
+                            inp = lb.locator("input")
+                            if not inp.is_checked():
+                                inp.check(force=True, timeout=5000)
                             hit = True
                             break
                     except Exception:
@@ -437,24 +258,26 @@ def hw_select_shokusyu(driver, dai_name, sho_list, log_area):
                 log_area.warning(f"   職種小項目「{sho}」が見つかりませんでした。")
 
         time.sleep(0.3)
-        # 決定（saveEasyShokusyuModal）
-        for b in driver.find_elements(By.XPATH, f"//div[contains(@class,'modalEasyShokusyuBox{suffix}')]//input[@value='決定']"):
-            if b.is_displayed():
-                hw_click(driver, b)
+        # 決定
+        dec = page.locator(f"//div[contains(@class,'modalEasyShokusyuBox{suffix}')]//input[@value='決定']")
+        for i in range(dec.count()):
+            b = dec.nth(i)
+            if b.is_visible():
+                b.click(force=True, timeout=5000)
                 break
         time.sleep(0.5)
     except Exception as e:
         log_area.warning(f"   職種「{dai_name}」の選択に失敗: {e}")
 
 
-def hw_collect_detail_urls(driver, log_area):
-    """検索結果一覧から全ページをめくり、各カードの『詳細を表示』リンクを収集。"""
+def hw_collect_detail_urls(page, log_area):
+    """検索結果一覧から全ページをめくり、各カードの詳細リンクを収集。"""
     detail_urls = []
     page_num = 1
     base = "https://www.hellowork.mhlw.go.jp/kensaku/"
     while True:
         time.sleep(2.0)
-        soup = BeautifulSoup(driver.page_source, "html.parser")
+        soup = BeautifulSoup(page.content(), "html.parser")
         if "該当する求人はありませんでした" in soup.text or "条件に一致する求人は" in soup.text:
             log_area.info("   該当求人なし。")
             break
@@ -469,16 +292,18 @@ def hw_collect_detail_urls(driver, log_area):
         log_area.text(f"   {page_num}ページ目から {page_count}件 の詳細リンクを取得（累計{len(detail_urls)}件）")
         if page_count == 0:
             break
+        # 「次へ＞」ボタン
         try:
-            next_btns = driver.find_elements(By.CSS_SELECTOR, "input[name='fwListNaviBtnNext']")
-            target = None
-            for b in next_btns:
-                if b.is_displayed() and b.is_enabled():
-                    target = b
+            nxt = page.locator("input[name='fwListNaviBtnNext']")
+            clicked = False
+            for i in range(nxt.count()):
+                b = nxt.nth(i)
+                if b.is_visible() and b.is_enabled():
+                    b.click(force=True, timeout=5000)
+                    clicked = True
                     break
-            if not target:
+            if not clicked:
                 break
-            hw_click(driver, target)
             page_num += 1
             time.sleep(2.0)
         except Exception:
@@ -631,6 +456,7 @@ def write_to_target_sheet(gc, target_url, data, log_area):
         log_area.error(f"   転記エラー: {e}")
 
 
+
 # ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝ 画面描画 ＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
 st.markdown("""
 <style>
@@ -694,15 +520,17 @@ st.sidebar.markdown('<div style="background:#ffffff;border:1.5px solid #0071e3;b
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
+
 if st.button("取得を開始", type="primary"):
     log_area = st.container()
     with st.spinner("処理を実行中です... しばらくお待ちください。"):
         try:
+            log_area.text("Playwrightブラウザを準備中...")
+            ensure_playwright_browser()
+
             log_area.text("スプレッドシートに接続中...")
-            # Streamlit CloudのSecretsから認証情報を取得
             try:
                 creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
-                # private_keyの文字列リテラル \n を実際の改行に変換
                 if "private_key" in creds_dict:
                     creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
             except Exception as e:
@@ -719,92 +547,97 @@ if st.button("取得を開始", type="primary"):
             records = sheet.get_all_values()
             log_area.text(f"シートの読み込み完了！ 全部で {len(records)} 行あります。")
 
-            # ＝＝＝ Chromiumのクラッシュ原因を特定（生ログ取得）＝＝＝
-            log_area.text("Chromiumの起動診断を実行中...")
-            chromium_diag = diagnose_chromium()
-            log_area.info("Chromium起動診断:\n" + chromium_diag)
+            # ＝＝＝ Playwrightブラウザ起動 ＝＝＝
+            with sync_playwright() as p:
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=[
+                        '--no-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu',
+                        '--disable-setuid-sandbox',
+                        '--single-process',
+                        '--no-zygote',
+                    ]
+                )
+                context = browser.new_context(
+                    user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    viewport={'width': 1920, 'height': 1080},
+                )
+                page = context.new_page()
+                page.set_default_timeout(30000)
+                log_area.success("ブラウザの起動に成功しました！")
 
-            driver = setup_browser()
+                # データは5行目（index4）から
+                for i, row in enumerate(records[4:], start=5):
+                    def gcol(n):
+                        return row[n].strip() if len(row) > n and row[n] else ""
 
+                    client = gcol(1)   # B列 該当クライアント
+                    kubun = gcol(2)    # C列 区分
+                    if not kubun:
+                        continue
 
-            # データは5行目（index4）から。ヘッダーは3行目。
-            for i, row in enumerate(records[4:], start=5):
-                def gcol(n):
-                    return row[n].strip() if len(row) > n and row[n] else ""
+                    kinmu_jikan = gcol(3)  # D列 勤務時間
+                    pref = gcol(5)     # F列 都道府県
+                    mid_cat = gcol(6)  # G列 市区町村エリア
+                    cities = [gcol(7), gcol(8), gcol(9), gcol(10), gcol(11)]  # H〜L列
+                    dai_shokusyu = gcol(12)  # M列 職種大項目
+                    sho_list = [gcol(13), gcol(14), gcol(15)]  # N/O/P列
+                    target_url = gcol(16)  # Q列 転記先URL
 
-                client = gcol(1)   # B列 該当クライアント
-                kubun = gcol(2)    # C列 区分
-                # C列（区分）が空欄の行はスキップ
-                if not kubun:
-                    continue
+                    if not pref:
+                        log_area.warning(f"{i}行目（{client}）：都道府県が空欄のためスキップします。")
+                        continue
+                    if not target_url:
+                        log_area.warning(f"{i}行目（{client}）：転記先URL（Q列）が空欄のためスキップします。")
+                        continue
 
-                kinmu_jikan = gcol(3)  # D列 勤務時間（パート等）
-                # E列(4) 都道府県エリア は関東等。県から導出できるため未使用でも可
-                pref = gcol(5)     # F列 都道府県
-                mid_cat = gcol(6)  # G列 市区町村エリア（中分類）
-                cities = [gcol(7), gcol(8), gcol(9), gcol(10), gcol(11)]  # H〜L列 市区町村①〜⑤
-                dai_shokusyu = gcol(12)  # M列 希望する職種（大項目）
-                sho_list = [gcol(13), gcol(14), gcol(15)]  # N/O/P列 小項目①②③
-                target_url = gcol(16)  # Q列 転記先URL
-
-                if not pref:
-                    log_area.warning(f"{i}行目（{client}）：都道府県が空欄のためスキップします。")
-                    continue
-                if not target_url:
-                    log_area.warning(f"{i}行目（{client}）：転記先URL（Q列）が空欄のためスキップします。")
-                    continue
-
-                log_area.markdown(f"### 【{client}】 の取得を開始（ハローワーク）...")
-
-                # フォーム操作
-                log_area.text("   ハローワーク検索フォームを開いています...")
-                driver.get(HW_SEARCH_URL)
-                time.sleep(2.5)
-                try:
-                    hw_select_kubun(driver, kubun, kinmu_jikan, log_area)
-                    hw_select_area(driver, pref, mid_cat, cities, log_area)
-                    hw_select_shokusyu(driver, dai_shokusyu, sho_list, log_area)
-                    time.sleep(0.5)
-                    search_btn = driver.find_element(By.ID, "ID_searchBtn")
-                    hw_click(driver, search_btn)
-                    log_area.text("   検索を実行しました。結果一覧を取得します...")
+                    log_area.markdown(f"### 【{client}】 の取得を開始（ハローワーク）...")
+                    log_area.text("   ハローワーク検索フォームを開いています...")
+                    page.goto(HW_SEARCH_URL, wait_until="domcontentloaded")
                     time.sleep(2.5)
-                except Exception as e:
-                    log_area.error(f"   検索フォーム操作でエラー: {e}")
-                    continue
 
-                detail_urls = hw_collect_detail_urls(driver, log_area)
-                detail_urls = list(dict.fromkeys(detail_urls))
-                log_area.info(f"★ 合計 {len(detail_urls)}件 の詳細ページを抽出します。")
-                if len(detail_urls) == 0:
-                    continue
-
-                scraped_data = []
-                my_bar = st.progress(0, text="詳細情報を抽出中...")
-                for idx, url in enumerate(detail_urls):
-                    my_bar.progress((idx + 1) / len(detail_urls),
-                                    text=f"詳細情報を抽出中... ({idx+1}/{len(detail_urls)}件)")
                     try:
-                        driver.get(url)
-                        time.sleep(1.5)
-                        detail_soup = BeautifulSoup(driver.page_source, "html.parser")
-                        rowdata = hw_extract_detail(detail_soup, dai_shokusyu)
-                        # 1名除外なし → 全件転記
-                        scraped_data.append(rowdata)
+                        hw_select_kubun(page, kubun, kinmu_jikan, log_area)
+                        hw_select_area(page, pref, mid_cat, cities, log_area)
+                        hw_select_shokusyu(page, dai_shokusyu, sho_list, log_area)
+                        time.sleep(0.5)
+                        page.locator("#ID_searchBtn").click(force=True, timeout=10000)
+                        log_area.text("   検索を実行しました。結果一覧を取得します...")
+                        time.sleep(2.5)
                     except Exception as e:
-                        log_area.warning(f"   詳細抽出エラー（スキップ）: {e}")
-                time.sleep(1)
-                my_bar.empty()
+                        log_area.error(f"   検索フォーム操作でエラー: {e}")
+                        continue
 
-                if scraped_data:
-                    write_to_target_sheet(gc, target_url, scraped_data, log_area)
+                    detail_urls = hw_collect_detail_urls(page, log_area)
+                    detail_urls = list(dict.fromkeys(detail_urls))
+                    log_area.info(f"★ 合計 {len(detail_urls)}件 の詳細ページを抽出します。")
+                    if len(detail_urls) == 0:
+                        continue
 
-            driver.quit()
+                    scraped_data = []
+                    my_bar = st.progress(0, text="詳細情報を抽出中...")
+                    for idx, url in enumerate(detail_urls):
+                        my_bar.progress((idx + 1) / len(detail_urls),
+                                        text=f"詳細情報を抽出中... ({idx+1}/{len(detail_urls)}件)")
+                        try:
+                            page.goto(url, wait_until="domcontentloaded")
+                            time.sleep(1.5)
+                            detail_soup = BeautifulSoup(page.content(), "html.parser")
+                            rowdata = hw_extract_detail(detail_soup, dai_shokusyu)
+                            scraped_data.append(rowdata)
+                        except Exception as e:
+                            log_area.warning(f"   詳細抽出エラー（スキップ）: {e}")
+                    time.sleep(1)
+                    my_bar.empty()
+
+                    if scraped_data:
+                        write_to_target_sheet(gc, target_url, scraped_data, log_area)
+
+                browser.close()
+
             log_area.success("すべての処理が完了しました！")
 
         except Exception as e:
             st.error(f"エラーが発生しました: {e}")
-            try:
-                driver.quit()
-            except Exception:
-                pass
