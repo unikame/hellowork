@@ -22,7 +22,7 @@ HW_SEARCH_URL = "https://www.hellowork.mhlw.go.jp/kensaku/GECA110010.do?action=i
 HW_KYUSHOKU_NO_JO = "60049"     # 前半5桁（ID_kSNoJo）
 HW_KYUSHOKU_NO_GE = "58004503"  # 後半8桁（ID_kSNoGe）
 
-st.set_page_config(page_title="ASUMO ハローワーク求人取得", page_icon="🪁",
+st.set_page_config(page_title="ASUMO ハローワーク求人取得", page_icon="??",
                    layout="wide", initial_sidebar_state="expanded")
 
 
@@ -371,7 +371,7 @@ def hw_extract_detail(soup, dai_shokusyu):
     ハローワーク詳細ページから31項目を抽出。
     確実な id は id で、それ以外はラベル（見出し）テキストから隣接値を取得する。
     dai_shokusyu: 検索条件M列の大項目（詳細ページに無いのでシート値を使う）
-    戻り値: 転記順（A〜AF）の list
+    戻り値: 転記順（A?AF）の list
     """
     NA = "記載なし"
 
@@ -636,7 +636,7 @@ if st.button("取得を開始", type="primary"):
                     kinmu_jikan = gcol(3)  # D列 勤務時間
                     pref = gcol(5)     # F列 都道府県
                     mid_cat = gcol(6)  # G列 市区町村エリア
-                    cities = [gcol(7), gcol(8), gcol(9), gcol(10), gcol(11)]  # H〜L列
+                    cities = [gcol(7), gcol(8), gcol(9), gcol(10), gcol(11)]  # H?L列
                     dai_shokusyu = gcol(12)  # M列 職種大項目
                     sho_list = [gcol(13), gcol(14), gcol(15)]  # N/O/P列
                     target_url = gcol(16)  # Q列 転記先URL
@@ -670,20 +670,18 @@ if st.button("取得を開始", type="primary"):
                                 page.evaluate("document.querySelector('#ID_searchBtn').closest('form').submit()")
                         log_area.text("   検索を実行しました。結果ページへの遷移を待っています...")
 
-                        # 検索結果ページ（GECA110020）に遷移するまで待つ（最大30秒）
+                        # 検索結果の「○件中」表示が現れるまで待つ（最大40秒）
+                        # ※ハローワークはURLが変わらずPOSTで中身が変わるため、件数表示の出現で判定
                         transitioned = False
-                        for _ in range(30):
+                        for _ in range(40):
                             time.sleep(1.0)
-                            if "GECA110020" in page.url:
+                            try:
+                                content = page.content()
+                            except Exception:
+                                content = ""
+                            if "件中" in content or "該当する求人はありませんでした" in content:
                                 transitioned = True
                                 break
-                            # URLが変わらなくても、結果見出しが出れば遷移とみなす
-                            try:
-                                if page.locator("text=検索結果").count() > 0 and "件中" in page.content():
-                                    transitioned = True
-                                    break
-                            except Exception:
-                                pass
                         time.sleep(1.5)
 
                         # ＝＝＝ 遷移後の診断 ＝＝＝
