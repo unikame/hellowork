@@ -173,18 +173,34 @@ def hw_select_area(page, area_block, pref, mid_cat, cities, log_area):
             pass
         return False
 
+    def wait_for_text_visible(text, timeout_sec=10):
+        """指定テキストが画面に見えるようになるまで待つ"""
+        for _ in range(timeout_sec * 2):
+            time.sleep(0.5)
+            try:
+                loc = page.get_by_text(text, exact=False)
+                if loc.count() > 0 and loc.first.is_visible():
+                    return True
+            except Exception:
+                pass
+        return False
+
     # Lv1 地方ブロック（E列：関東など）
     if area_block:
         if click_visible_text_in_scope(area_block):
             log_area.text(f"   地方ブロック「{area_block}」を開きました。")
-            time.sleep(0.6)
+            # 次の階層（都道府県名）が見えるまで待つ
+            if pref:
+                wait_for_text_visible(pref, timeout_sec=10)
         else:
             log_area.warning(f"   地方ブロック「{area_block}」が見つかりませんでした。")
 
     # Lv2 都道府県（F列：埼玉県）
     if click_visible_text_in_scope(pref):
         log_area.text(f"   都道府県「{pref}」を開きました。")
-        time.sleep(0.6)
+        # 次の階層（市区町村エリア名）が見えるまで待つ
+        if mid_cat:
+            wait_for_text_visible(mid_cat, timeout_sec=10)
     else:
         log_area.warning(f"   都道府県「{pref}」が見つかりませんでした。")
 
@@ -192,7 +208,10 @@ def hw_select_area(page, area_block, pref, mid_cat, cities, log_area):
     if mid_cat:
         if click_visible_text_in_scope(mid_cat):
             log_area.text(f"   市区町村エリア「{mid_cat}」を開きました。")
-            time.sleep(0.6)
+            # 次の階層（市区町村名）が見えるまで待つ（AJAXで動的取得されるため長めに）
+            first_city = next((c for c in cities if c), None)
+            if first_city:
+                wait_for_text_visible(first_city, timeout_sec=15)
         else:
             log_area.warning(f"   市区町村エリア「{mid_cat}」が見つかりませんでした。")
 
