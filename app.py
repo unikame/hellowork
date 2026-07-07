@@ -149,9 +149,9 @@ def hw_select_area(page, area_block, pref, mid_cat, cities, log_area):
         log_area.warning(f"   都道府県モーダルを開けませんでした: {e}")
         return False
 
-    # モーダルが実際に画面に表示されるまで待つ
+    # モーダルが実際に画面に表示されるまで待つ（モーダルの見出し div.modal.top を対象にする）
     try:
-        page.get_by_text("都道府県から選択", exact=False).first.wait_for(state="visible", timeout=10000)
+        page.locator("div.modal.top", has_text="都道府県から選択").first.wait_for(state="visible", timeout=10000)
     except Exception:
         log_area.warning("   都道府県モーダルの表示を確認できませんでした。")
         return False
@@ -214,18 +214,24 @@ def hw_select_area(page, area_block, pref, mid_cat, cities, log_area):
         else:
             log_area.warning(f"   市区町村「{city}」が見つかりませんでした。")
 
-    # 決定ボタン：都道府県モーダル（操作範囲）内に見えている「決定」をクリック
+    # 決定ボタン：都道府県モーダル専用の固有ID #ID_ok4 を直接クリック
     time.sleep(0.5)
     try:
-        decide_locator = modal_scope.get_by_text("決定", exact=True)
-        n = decide_locator.count()
         clicked = False
-        for i in range(n):
-            el = decide_locator.nth(i)
-            if el.is_visible():
-                el.click(timeout=5000)
-                clicked = True
-                break
+        ok_btn = page.locator("#ID_ok4")
+        if ok_btn.count() > 0 and ok_btn.first.is_visible():
+            ok_btn.first.click(timeout=5000)
+            clicked = True
+        if not clicked:
+            # フォールバック：モーダル内の「決定」テキストを探す
+            decide_locator = modal_scope.get_by_text("決定", exact=True)
+            n = decide_locator.count()
+            for i in range(n):
+                el = decide_locator.nth(i)
+                if el.is_visible():
+                    el.click(timeout=5000)
+                    clicked = True
+                    break
         if clicked:
             log_area.text("   就業場所の「決定」を押しました。")
         else:
