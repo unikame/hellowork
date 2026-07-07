@@ -67,9 +67,13 @@ def _norm(s):
 def pw_text_of(loc):
     """要素のtextContentを取得（非表示でも取れる）"""
     try:
-        return loc.evaluate("el => el.textContent || ''")
+        t = loc.text_content(timeout=2000)
+        return t if t else ""
     except Exception:
-        return ""
+        try:
+            return loc.evaluate("el => el.textContent || ''")
+        except Exception:
+            return ""
 
 
 def hw_select_kubun(page, kubun, kinmu, log_area):
@@ -126,22 +130,26 @@ def hw_select_area(page, pref, mid_cat, cities, log_area):
         if not text:
             return False
         target = _norm(text)
-        headers = page.locator(f"button.{level_class}")
-        n = headers.count()
-        for strict in (True, False):
-            for i in range(n):
-                h = headers.nth(i)
-                try:
-                    htxt = _norm(pw_text_of(h))
-                    if not htxt:
-                        continue
-                    matched = (htxt == target) if strict else (target in htxt or htxt in target)
-                    if matched:
-                        h.click(force=True, timeout=5000)
-                        time.sleep(0.8)
-                        return True
-                except Exception:
-                    continue
+        # JS側でテキスト照合してクリック（Playwrightの要素取得の癖を回避）
+        for strict_mode in (1, 0):
+            clicked = page.evaluate(
+                """(args) => {
+                    const [levelClass, target, strict] = args;
+                    const norm = s => (s||'').replace(/[\\s　・/／（）()]/g, '');
+                    const btns = Array.from(document.querySelectorAll('button.' + levelClass));
+                    for (const b of btns) {
+                        const t = norm(b.textContent);
+                        if (!t) continue;
+                        const match = strict ? (t === target) : (t.includes(target) || target.includes(t));
+                        if (match) { b.click(); return true; }
+                    }
+                    return false;
+                }""",
+                [level_class, target, strict_mode]
+            )
+            if clicked:
+                time.sleep(0.8)
+                return True
         return False
 
     # Lv2 都道府県
@@ -165,24 +173,26 @@ def hw_select_area(page, pref, mid_cat, cities, log_area):
             continue
         city_norm = _norm(city)
         checked = False
-        for strict in (True, False):
-            labels = page.locator("div.modal.middle label.forLabel")
-            n = labels.count()
-            for i in range(n):
-                lb = labels.nth(i)
-                try:
-                    ltxt = _norm(pw_text_of(lb))
-                    if not ltxt:
-                        continue
-                    matched = (ltxt == city_norm) if strict else (city_norm in ltxt or ltxt in city_norm)
-                    if matched:
-                        inp = lb.locator("input")
-                        if not inp.is_checked():
-                            inp.check(force=True, timeout=5000)
-                        checked = True
-                        break
-                except Exception:
-                    continue
+        for strict_mode in (1, 0):
+            checked = page.evaluate(
+                """(args) => {
+                    const [target, strict] = args;
+                    const norm = s => (s||'').replace(/[\\s　・/／（）()]/g, '');
+                    const labels = Array.from(document.querySelectorAll('div.modal.middle label.forLabel'));
+                    for (const lb of labels) {
+                        const t = norm(lb.textContent);
+                        if (!t) continue;
+                        const match = strict ? (t === target) : (t.includes(target) || target.includes(t));
+                        if (match) {
+                            const inp = lb.querySelector('input');
+                            if (inp && !inp.checked) { inp.click(); }
+                            return true;
+                        }
+                    }
+                    return false;
+                }""",
+                [city_norm, strict_mode]
+            )
             if checked:
                 break
         if not checked:
@@ -232,24 +242,26 @@ def hw_select_shokusyu(page, dai_name, sho_list, log_area):
         for sho in targets:
             sho_norm = _norm(sho)
             hit = False
-            for strict in (True, False):
-                labels = page.locator(f"{modal_sel} label")
-                n = labels.count()
-                for i in range(n):
-                    lb = labels.nth(i)
-                    try:
-                        ltxt = _norm(pw_text_of(lb))
-                        if not ltxt:
-                            continue
-                        matched = (ltxt == sho_norm) if strict else (sho_norm in ltxt or ltxt in sho_norm)
-                        if matched:
-                            inp = lb.locator("input")
-                            if not inp.is_checked():
-                                inp.check(force=True, timeout=5000)
-                            hit = True
-                            break
-                    except Exception:
-                        continue
+            for strict_mode in (1, 0):
+                hit = page.evaluate(
+                    """(args) => {
+                        const [modalSel, target, strict] = args;
+                        const norm = s => (s||'').replace(/[\\s　・/／（）()]/g, '');
+                        const labels = Array.from(document.querySelectorAll(modalSel + ' label'));
+                        for (const lb of labels) {
+                            const t = norm(lb.textContent);
+                            if (!t) continue;
+                            const match = strict ? (t === target) : (t.includes(target) || target.includes(t));
+                            if (match) {
+                                const inp = lb.querySelector('input');
+                                if (inp && !inp.checked) { inp.click(); }
+                                return true;
+                            }
+                        }
+                        return false;
+                    }""",
+                    [modal_sel, sho_norm, strict_mode]
+                )
                 if hit:
                     break
             if hit:
