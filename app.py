@@ -306,14 +306,6 @@ def hw_select_area(page, area_block, pref, mid_cat, cities, log_area):
     except Exception as e:
         log_area.warning(f"   就業場所の決定ボタン押下に失敗: {e}")
         return False
-
-    # 反映確認
-    try:
-        label_val = page.evaluate("document.querySelector('#ID_todohukenNameLbl')?.textContent || ''")
-        log_area.info(f"   【反映確認】選択中ラベル表示: {label_val.strip() or '（空）'}")
-    except Exception:
-        pass
-
     return True
 
 
@@ -727,13 +719,6 @@ if st.button("取得を開始", type="primary"):
                         hw_select_shokusyu(page, dai_shokusyu, sho_list, log_area)
                         time.sleep(1.0)
 
-                        # 【診断】検索ボタンを押す直前のスクリーンショット
-                        try:
-                            shot_before = page.screenshot(full_page=True)
-                            st.image(shot_before, caption="検索ボタンを押す直前の画面", use_container_width=True)
-                        except Exception as e:
-                            log_area.warning(f"   直前スクショ失敗: {e}")
-
                         # 「検索する」ボタン（ID_searchBtn）をクリック
                         try:
                             page.locator("#ID_searchBtn").first.scroll_into_view_if_needed(timeout=5000)
@@ -743,10 +728,9 @@ if st.button("取得を開始", type="primary"):
                                 page.evaluate("document.querySelector('#ID_searchBtn').click()")
                             except Exception:
                                 page.evaluate("document.querySelector('#ID_searchBtn').closest('form').submit()")
-                        log_area.text("   検索を実行しました。結果ページへの遷移を待っています...")
+                        log_area.text("   検索を実行しました。結果一覧を取得します...")
 
                         # 検索結果（○件中 1〜）が現れるまで待つ（最大40秒）
-                        transitioned = False
                         for _ in range(40):
                             time.sleep(1.0)
                             try:
@@ -754,33 +738,8 @@ if st.button("取得を開始", type="primary"):
                             except Exception:
                                 content = ""
                             if re.search(r'\d[\d,]*\s*件中\s*\d', content) or "該当する求人はありませんでした" in content:
-                                transitioned = True
                                 break
                         time.sleep(1.5)
-
-                        # 【診断】検索ボタンを押した後のスクリーンショット
-                        try:
-                            shot_after = page.screenshot(full_page=True)
-                            st.image(shot_after, caption="検索ボタンを押した後の画面", use_container_width=True)
-                        except Exception as e:
-                            log_area.warning(f"   直後スクショ失敗: {e}")
-
-                        # ＝＝＝ 遷移後の診断 ＝＝＝
-                        cur_url = page.url
-                        soup_diag = BeautifulSoup(page.content(), "html.parser")
-                        ken = ""
-                        m = re.search(r'(\d[\d,]*)\s*件中', soup_diag.get_text())
-                        if m:
-                            ken = m.group(0)
-                        body_text = soup_diag.get_text()
-                        err_msg = ""
-                        for kw in ["エラー", "選択してください", "入力してください", "該当する求人はありませんでした"]:
-                            if kw in body_text:
-                                idx = body_text.find(kw)
-                                err_msg = body_text[max(0, idx-20):idx+40].strip()
-                                break
-                        status = "結果ページに遷移OK" if transitioned else "★遷移せず（フォームのまま）"
-                        log_area.info(f"   {status}\n   遷移先URL: {cur_url}\n   該当件数表示: {ken or '見つからず'}\n   注目メッセージ: {err_msg or 'なし'}")
                     except Exception as e:
                         log_area.error(f"   検索フォーム操作でエラー: {e}")
                         continue
