@@ -22,7 +22,7 @@ HW_SEARCH_URL = "https://www.hellowork.mhlw.go.jp/kensaku/GECA110010.do?action=i
 HW_KYUSHOKU_NO_JO = "60049"     # 前半5桁（ID_kSNoJo）
 HW_KYUSHOKU_NO_GE = "58004503"  # 後半8桁（ID_kSNoGe）
 
-st.set_page_config(page_title="ASUMO ハローワーク求人取得", page_icon="??",
+st.set_page_config(page_title="はぐくみキャリア ハローワーク求人取得", page_icon="??",
                    layout="wide", initial_sidebar_state="expanded")
 
 
@@ -867,8 +867,6 @@ if st.button("取得を開始", type="primary"):
                         continue
 
                     scraped_data = []
-                    BATCH_SIZE = 30  # メモリ節約のため30件ごとに転記
-                    total_written = 0
                     my_bar = st.progress(0, text="詳細情報を抽出中...")
                     for idx, url in enumerate(detail_urls):
                         my_bar.progress((idx + 1) / len(detail_urls),
@@ -881,22 +879,11 @@ if st.button("取得を開始", type="primary"):
                             scraped_data.append(rowdata)
                         except Exception as e:
                             log_area.warning(f"   詳細抽出エラー（スキップ）: {e}")
-
-                        # 30件たまったら転記してメモリ解放
-                        if len(scraped_data) >= BATCH_SIZE:
-                            write_to_target_sheet(gc, target_url, scraped_data, log_area)
-                            total_written += len(scraped_data)
-                            scraped_data = []
-                            import gc as garbage_collector
-                            garbage_collector.collect()
-
-                    # 残りを転記
-                    if scraped_data:
-                        write_to_target_sheet(gc, target_url, scraped_data, log_area)
-                        total_written += len(scraped_data)
                     time.sleep(1)
                     my_bar.empty()
-                    log_area.text(f"   合計 {total_written}件 を転記しました。")
+
+                    if scraped_data:
+                        write_to_target_sheet(gc, target_url, scraped_data, log_area)
 
                 browser.close()
 
