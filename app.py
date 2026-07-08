@@ -22,7 +22,7 @@ HW_SEARCH_URL = "https://www.hellowork.mhlw.go.jp/kensaku/GECA110010.do?action=i
 HW_KYUSHOKU_NO_JO = "60049"     # 前半5桁（ID_kSNoJo）
 HW_KYUSHOKU_NO_GE = "58004503"  # 後半8桁（ID_kSNoGe）
 
-st.set_page_config(page_title="ASUMO ハローワーク求人取得", page_icon="??",
+st.set_page_config(page_title="はぐくみキャリア ハローワーク求人取得", page_icon="??",
                    layout="wide", initial_sidebar_state="expanded")
 
 
