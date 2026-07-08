@@ -22,7 +22,7 @@ HW_SEARCH_URL = "https://www.hellowork.mhlw.go.jp/kensaku/GECA110010.do?action=i
 HW_KYUSHOKU_NO_JO = "60049"     # 前半5桁（ID_kSNoJo）
 HW_KYUSHOKU_NO_GE = "58004503"  # 後半8桁（ID_kSNoGe）
 
-st.set_page_config(page_title="はぐくみキャリア ハローワーク求人取得", page_icon="??",
+st.set_page_config(page_title="ASUMO ハローワーク求人取得", page_icon="??",
                    layout="wide", initial_sidebar_state="expanded")
 
 
@@ -111,29 +111,42 @@ def hw_input_kyushoku_no(page, log_area):
 
 def hw_select_kubun(page, kubun, kinmu, log_area):
     """求人区分（C列）と勤務時間（D列＝パート/フルタイム）を設定。"""
-    # 一般求人ラジオ（既定でchecked）
-    try:
-        radio = page.locator("#ID_kjKbnRadioBtn1")
-        if radio.count() > 0 and not radio.is_checked():
-            radio.check(force=True, timeout=5000)
-    except Exception:
-        pass
-    if kinmu and "パート" in kinmu:
+    # C列の値に応じてラジオボタンを切り替え
+    if kubun and "障害" in kubun:
         try:
-            part = page.locator("#ID_ippanCKBox2")
-            if part.count() > 0 and not part.is_checked():
-                part.check(force=True, timeout=5000)
-            log_area.text("   求人区分：一般求人＋パート を選択しました。")
+            radio = page.locator("#ID_kjKbnRadioBtn5")
+            if radio.count() > 0:
+                radio.check(force=True, timeout=5000)
+            log_area.text("   求人区分：障害のある方のための求人 を選択しました。")
         except Exception as e:
-            log_area.warning(f"   パートのチェックに失敗: {e}")
-    elif kinmu and "フルタイム" in kinmu:
+            log_area.warning(f"   障害者求人の選択に失敗: {e}")
+    else:
+        # 一般求人（既定）
         try:
-            full = page.locator("#ID_ippanCKBox1")
-            if full.count() > 0 and not full.is_checked():
-                full.check(force=True, timeout=5000)
-            log_area.text("   求人区分：一般求人＋フルタイム を選択しました。")
-        except Exception as e:
-            log_area.warning(f"   フルタイムのチェックに失敗: {e}")
+            radio = page.locator("#ID_kjKbnRadioBtn1")
+            if radio.count() > 0 and not radio.is_checked():
+                radio.check(force=True, timeout=5000)
+        except Exception:
+            pass
+        # 勤務時間（D列）
+        if kinmu and "パート" in kinmu:
+            try:
+                part = page.locator("#ID_ippanCKBox2")
+                if part.count() > 0 and not part.is_checked():
+                    part.check(force=True, timeout=5000)
+                log_area.text("   求人区分：一般求人＋パート を選択しました。")
+            except Exception as e:
+                log_area.warning(f"   パートのチェックに失敗: {e}")
+        elif kinmu and "フルタイム" in kinmu:
+            try:
+                full = page.locator("#ID_ippanCKBox1")
+                if full.count() > 0 and not full.is_checked():
+                    full.check(force=True, timeout=5000)
+                log_area.text("   求人区分：一般求人＋フルタイム を選択しました。")
+            except Exception as e:
+                log_area.warning(f"   フルタイムのチェックに失敗: {e}")
+        else:
+            log_area.text("   求人区分：一般求人 を選択しました。")
 
 
 def hw_select_area(page, area_block, pref, mid_cat, cities, log_area):
@@ -854,6 +867,8 @@ if st.button("取得を開始", type="primary"):
                         continue
 
                     scraped_data = []
+                    BATCH_SIZE = 30  # メモリ節約のため30件ごとに転記
+                    total_written = 0
                     my_bar = st.progress(0, text="詳細情報を抽出中...")
                     for idx, url in enumerate(detail_urls):
                         my_bar.progress((idx + 1) / len(detail_urls),
@@ -866,11 +881,22 @@ if st.button("取得を開始", type="primary"):
                             scraped_data.append(rowdata)
                         except Exception as e:
                             log_area.warning(f"   詳細抽出エラー（スキップ）: {e}")
-                    time.sleep(1)
-                    my_bar.empty()
 
+                        # 30件たまったら転記してメモリ解放
+                        if len(scraped_data) >= BATCH_SIZE:
+                            write_to_target_sheet(gc, target_url, scraped_data, log_area)
+                            total_written += len(scraped_data)
+                            scraped_data = []
+                            import gc as garbage_collector
+                            garbage_collector.collect()
+
+                    # 残りを転記
                     if scraped_data:
                         write_to_target_sheet(gc, target_url, scraped_data, log_area)
+                        total_written += len(scraped_data)
+                    time.sleep(1)
+                    my_bar.empty()
+                    log_area.text(f"   合計 {total_written}件 を転記しました。")
 
                 browser.close()
 
