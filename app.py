@@ -22,7 +22,7 @@ HW_SEARCH_URL = "https://www.hellowork.mhlw.go.jp/kensaku/GECA110010.do?action=i
 HW_KYUSHOKU_NO_JO = "60049"     # 前半5桁（ID_kSNoJo）
 HW_KYUSHOKU_NO_GE = "58004503"  # 後半8桁（ID_kSNoGe）
 
-st.set_page_config(page_title="はぐくみキャリア ハローワーク求人取得", page_icon="??",
+st.set_page_config(page_title="ASUMO ハローワーク求人取得", page_icon="??",
                    layout="wide", initial_sidebar_state="expanded")
 
 
@@ -679,10 +679,22 @@ def write_to_target_sheet(gc, target_url, data, log_area):
         all_values = target_sheet.get_all_values()
         next_row = len(all_values) + 1
         cell_range = f'C{next_row}'
-        target_sheet.update(cell_range, trimmed_data, value_input_option='USER_ENTERED')
+        try:
+            target_sheet.update(cell_range, trimmed_data, value_input_option='USER_ENTERED')
+        except Exception as e1:
+            # updateが失敗した場合、行数が足りない可能性があるので行を追加してリトライ
+            log_area.text(f"   update失敗（{type(e1).__name__}: {e1}）、行追加してリトライ...")
+            try:
+                needed_rows = next_row + len(trimmed_data)
+                current_rows = target_sheet.row_count
+                if needed_rows > current_rows:
+                    target_sheet.add_rows(needed_rows - current_rows + 10)
+                target_sheet.update(cell_range, trimmed_data, value_input_option='USER_ENTERED')
+            except Exception as e2:
+                raise Exception(f"リトライも失敗: {type(e2).__name__}: {e2}")
         log_area.success(f"   データをスプレッドシートに転記しました（{len(data)}件、{next_row}行目から）")
     except Exception as e:
-        log_area.error(f"   転記エラー: {e}")
+        log_area.error(f"   転記エラー: {type(e).__name__}: {e}")
 
 
 
